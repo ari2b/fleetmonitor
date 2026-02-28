@@ -16,6 +16,7 @@ class FleetProvider extends ChangeNotifier {
   bool isGpsActive = false;
   Timer? _gpsTimer;
 
+  // ─── Auth ─────────────────────────────────────────────
   void loginAsDriver(String id) {
     currentDriverId = id;
     notifyListeners();
@@ -28,6 +29,7 @@ class FleetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ─── GPS ──────────────────────────────────────────────
   void toggleGps() {
     isGpsActive = !isGpsActive;
     if (isGpsActive) {
@@ -38,23 +40,6 @@ class FleetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateStatus(String id, String newStatus) {
-    final vehicleIndex = vehicles.indexWhere((v) => v.id == id);
-    if (vehicleIndex != -1) {
-      final now = DateTime.now();
-      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-      
-      vehicles[vehicleIndex].status = newStatus;
-      vehicles[vehicleIndex].logs.insert(0, '$timeStr - ${statusThemes[newStatus]!.label}');
-      
-      // Keep only last 10 logs
-      if (vehicles[vehicleIndex].logs.length > 10) {
-        vehicles[vehicleIndex].logs.removeLast();
-      }
-      notifyListeners();
-    }
-  }
-
   void _startGpsSimulation() {
     final random = Random();
     _gpsTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
@@ -62,26 +47,75 @@ class FleetProvider extends ChangeNotifier {
         timer.cancel();
         return;
       }
-
-      final vehicleIndex = vehicles.indexWhere((v) => v.id == currentDriverId);
-      if (vehicleIndex != -1) {
-        final v = vehicles[vehicleIndex];
+      final idx = vehicles.indexWhere((v) => v.id == currentDriverId);
+      if (idx != -1) {
+        final v = vehicles[idx];
         if (v.status == 'berangkat' || v.status == 'perjalanan') {
-          double moveLat = (random.nextDouble() - 0.5) * 0.02;
-          double moveLng = (random.nextDouble() - 0.5) * 0.02;
-          
-          v.lat = min(max(v.lat + moveLat, 0.1), 0.9);
-          v.lng = min(max(v.lng + moveLng, 0.1), 0.9);
+          v.lat = min(max(v.lat + (random.nextDouble() - 0.5) * 0.02, 0.1), 0.9);
+          v.lng = min(max(v.lng + (random.nextDouble() - 0.5) * 0.02, 0.1), 0.9);
           notifyListeners();
         }
       }
     });
   }
 
+  // ─── Status ───────────────────────────────────────────
+  void updateStatus(String id, String newStatus) {
+    final idx = vehicles.indexWhere((v) => v.id == id);
+    if (idx != -1) {
+      final now = DateTime.now();
+      final timeStr =
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      vehicles[idx].status = newStatus;
+      vehicles[idx].logs
+          .insert(0, '$timeStr - ${statusThemes[newStatus]!.label}');
+      if (vehicles[idx].logs.length > 10) vehicles[idx].logs.removeLast();
+      notifyListeners();
+    }
+  }
+
+  // ─── CRUD ─────────────────────────────────────────────
+
+  /// Tambah armada baru
+  void addVehicle(String driverName, String plateNumber) {
+    final newVehicle = Vehicle(
+      id: 'v${DateTime.now().millisecondsSinceEpoch}',
+      driverName: driverName,
+      plateNumber: plateNumber,
+      lat: 0.4 + (Random().nextDouble() * 0.2),
+      lng: 0.4 + (Random().nextDouble() * 0.2),
+    );
+    vehicles.add(newVehicle);
+    notifyListeners();
+  }
+
+  /// Update nama driver & plat nomor
+  void updateVehicleData(String id, String driverName, String plateNumber) {
+    final idx = vehicles.indexWhere((v) => v.id == id);
+    if (idx != -1) {
+      vehicles[idx].driverName = driverName;
+      vehicles[idx].plateNumber = plateNumber;
+      notifyListeners();
+    }
+  }
+
+  /// Hapus armada berdasarkan id
+  void deleteVehicle(String id) {
+    vehicles.removeWhere((v) => v.id == id);
+    // Jika driver yang login dihapus, logout otomatis
+    if (currentDriverId == id) {
+      currentDriverId = null;
+      isGpsActive = false;
+      _gpsTimer?.cancel();
+    }
+    notifyListeners();
+  }
+
+  // ─── Getter ───────────────────────────────────────────
   Vehicle? get currentVehicle {
     try {
       return vehicles.firstWhere((v) => v.id == currentDriverId);
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   }

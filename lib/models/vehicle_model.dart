@@ -1,7 +1,7 @@
 class Vehicle {
   final String id;
-  final String driverName;
-  final String plateNumber;
+  String driverName;     // mutable untuk edit
+  String plateNumber;    // mutable untuk edit
   String status;
   double lat;
   double lng;
