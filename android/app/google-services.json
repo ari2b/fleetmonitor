@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "938644119022",
+    "project_id": "fleetmonitor-aab6a",
+    "storage_bucket": "fleetmonitor-aab6a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:938644119022:android:dd4207592be8f0ac8642ff",
+        "android_client_info": {
+          "package_name": "com.example.fleetmonitor"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATYNtXGkWnMGKw_3qLGSMF4Tc0c0c9txU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
