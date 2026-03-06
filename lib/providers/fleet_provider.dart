@@ -17,8 +17,34 @@ class FleetProvider extends ChangeNotifier {
   Timer? _gpsTimer;
 
   // ─── Auth ─────────────────────────────────────────────
+
   void loginAsDriver(String id) {
     currentDriverId = id;
+    notifyListeners();
+  }
+
+  /// Login driver dari Firebase: tambah vehicle baru atau update jika sudah ada.
+  void loginAsDriverFromFirebase({
+    required String uid,
+    required String driverName,
+    required String plateNumber,
+    double lat = 0.5,
+    double lng = 0.5,
+  }) {
+    final idx = vehicles.indexWhere((v) => v.id == uid);
+    if (idx == -1) {
+      vehicles.add(Vehicle(
+        id: uid,
+        driverName: driverName,
+        plateNumber: plateNumber,
+        lat: lat,
+        lng: lng,
+      ));
+    } else {
+      vehicles[idx].driverName = driverName;
+      vehicles[idx].plateNumber = plateNumber;
+    }
+    currentDriverId = uid;
     notifyListeners();
   }
 
@@ -30,6 +56,7 @@ class FleetProvider extends ChangeNotifier {
   }
 
   // ─── GPS ──────────────────────────────────────────────
+
   void toggleGps() {
     isGpsActive = !isGpsActive;
     if (isGpsActive) {
@@ -60,6 +87,7 @@ class FleetProvider extends ChangeNotifier {
   }
 
   // ─── Status ───────────────────────────────────────────
+
   void updateStatus(String id, String newStatus) {
     final idx = vehicles.indexWhere((v) => v.id == id);
     if (idx != -1) {
@@ -67,8 +95,7 @@ class FleetProvider extends ChangeNotifier {
       final timeStr =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       vehicles[idx].status = newStatus;
-      vehicles[idx].logs
-          .insert(0, '$timeStr - ${statusThemes[newStatus]!.label}');
+      vehicles[idx].logs.insert(0, '$timeStr - ${statusThemes[newStatus]!.label}');
       if (vehicles[idx].logs.length > 10) vehicles[idx].logs.removeLast();
       notifyListeners();
     }
@@ -76,7 +103,6 @@ class FleetProvider extends ChangeNotifier {
 
   // ─── CRUD ─────────────────────────────────────────────
 
-  /// Tambah armada baru
   void addVehicle(String driverName, String plateNumber) {
     final newVehicle = Vehicle(
       id: 'v${DateTime.now().millisecondsSinceEpoch}',
@@ -89,7 +115,6 @@ class FleetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Update nama driver & plat nomor
   void updateVehicleData(String id, String driverName, String plateNumber) {
     final idx = vehicles.indexWhere((v) => v.id == id);
     if (idx != -1) {
@@ -99,10 +124,8 @@ class FleetProvider extends ChangeNotifier {
     }
   }
 
-  /// Hapus armada berdasarkan id
   void deleteVehicle(String id) {
     vehicles.removeWhere((v) => v.id == id);
-    // Jika driver yang login dihapus, logout otomatis
     if (currentDriverId == id) {
       currentDriverId = null;
       isGpsActive = false;
@@ -112,6 +135,7 @@ class FleetProvider extends ChangeNotifier {
   }
 
   // ─── Getter ───────────────────────────────────────────
+
   Vehicle? get currentVehicle {
     try {
       return vehicles.firstWhere((v) => v.id == currentDriverId);
