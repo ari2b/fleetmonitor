@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../providers/fleet_provider.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
 import 'views/admin_map_view.dart';
 import 'views/admin_list_view.dart';
 import 'views/admin_kelola_view.dart';
@@ -26,6 +28,21 @@ class _AdminDashboardState extends State<AdminDashboard>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleLogout() async {
+    // Sign out dari Firebase & Google
+    await AuthService.logout();
+    // Reset provider
+    widget.provider.logout();
+    if (!mounted) return;
+    // Kembali ke halaman login, hapus semua stack
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(
+          builder: (_) => AuthScreen(provider: widget.provider)),
+      (route) => false,
+    );
   }
 
   @override
@@ -60,10 +77,7 @@ class _AdminDashboardState extends State<AdminDashboard>
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () {
-              widget.provider.logout();
-              Navigator.pop(context);
-            },
+            onPressed: _handleLogout,
           )
         ],
         bottom: TabBar(
