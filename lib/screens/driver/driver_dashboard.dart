@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../providers/fleet_provider.dart';
 import '../auth/login_screen.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
+import '../../utils/status_theme.dart';
 
 class DriverDashboard extends StatelessWidget {
   final FleetProvider provider;
@@ -30,7 +34,6 @@ class DriverDashboard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  // Avatar icon
                   Container(
                     width: 40,
                     height: 40,
@@ -93,6 +96,10 @@ class DriverDashboard extends StatelessWidget {
               children: [
                 // ─── GPS Card ───────────────────────────────────
                 _GpsCard(provider: provider, vehicle: curV),
+                const SizedBox(height: 16),
+
+                // ─── Mini Map ────────────────────────────────────
+                _DriverMiniMap(vehicle: curV),
                 const SizedBox(height: 24),
 
                 // ─── Status Grid ────────────────────────────────
@@ -150,7 +157,8 @@ class DriverDashboard extends StatelessWidget {
                       label: 'Jalan',
                       color: Colors.teal,
                       disabled: !provider.isGpsActive,
-                      onTap: () => provider.updateStatus(curV.id, 'perjalanan'),
+                      onTap: () =>
+                          provider.updateStatus(curV.id, 'perjalanan'),
                     ),
                     _StatusAction(
                       active: curV.status == 'sampai',
@@ -170,15 +178,10 @@ class DriverDashboard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-
-                // ─── Route Info ─────────────────────────────────
-                _RouteInfoCard(),
               ],
             ),
           ),
 
-          // ─── Bottom Nav ─────────────────────────────────────
           bottomNavigationBar: _BottomNav(),
         );
       },
@@ -186,12 +189,157 @@ class DriverDashboard extends StatelessWidget {
   }
 }
 
+// ─── Mini Map untuk Driver ────────────────────────────────────────────────────
+
+class _DriverMiniMap extends StatelessWidget {
+  final dynamic vehicle;
+  const _DriverMiniMap({required this.vehicle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 180,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: FlutterMap(
+        options: MapOptions(
+          initialCenter: ll.LatLng(vehicle.lat, vehicle.lng),
+          initialZoom: 15,
+          interactionOptions: const InteractionOptions(
+            flags: InteractiveFlag.none, // Mini map tidak bisa digeser
+          ),
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.fleetmonitor',
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: ll.LatLng(vehicle.lat, vehicle.lng),
+                width: 48,
+                height: 48,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.indigo[600],
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.indigo.withOpacity(0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      )
+                    ],
+                  ),
+                  child: const Icon(Icons.navigation,
+                      color: Colors.white, size: 20),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ─── GPS Card ─────────────────────────────────────────────────────────────────
-class _GpsCard extends StatelessWidget {
+
+class _GpsCard extends StatefulWidget {
   final FleetProvider provider;
   final dynamic vehicle;
 
   const _GpsCard({required this.provider, required this.vehicle});
+
+  @override
+  State<_GpsCard> createState() => _GpsCardState();
+}
+
+class _GpsCardState extends State<_GpsCard> {
+  bool _requestingPermission = false;
+
+  Future<void> _handleGpsToggle() async {
+    if (widget.provider.isGpsActive) {
+      widget.provider.toggleGps();
+      return;
+    }
+
+    // Minta izin lokasi saat mengaktifkan GPS
+    setState(() => _requestingPermission = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          _showSnackbar('Layanan GPS tidak aktif. Aktifkan di Pengaturan.');
+        }
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) _showSnackbar('Izin lokasi ditolak.');
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          _showSnackbar(
+              'Izin lokasi ditolak permanen. Buka Pengaturan untuk mengizinkan.');
+        }
+        return;
+      }
+
+      // Izin diberikan → aktifkan GPS & dapatkan posisi nyata
+      widget.provider.toggleGps();
+      _startRealGpsTracking();
+    } catch (e) {
+      // Tangkap error manifest / permission tidak terdaftar
+      if (mounted) {
+        _showSnackbar(
+          'GPS tidak dapat diaktifkan. Pastikan izin lokasi sudah ditambahkan.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _requestingPermission = false);
+    }
+  }
+
+  void _startRealGpsTracking() {
+    // Stream posisi GPS nyata
+    Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // Update setiap bergerak 5 meter
+      ),
+    ).listen((Position position) {
+      if (!widget.provider.isGpsActive) return;
+      widget.provider.updateGpsPosition(
+        id: widget.vehicle.id,
+        lat: position.latitude,
+        lng: position.longitude,
+        heading: position.heading,
+      );
+    });
+  }
+
+  void _showSnackbar(String msg) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -214,7 +362,6 @@ class _GpsCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // Background icon dekorasi
           Positioned(
             right: -20,
             bottom: -20,
@@ -224,10 +371,8 @@ class _GpsCard extends StatelessWidget {
               color: Colors.white.withOpacity(0.05),
             ),
           ),
-
           Column(
             children: [
-              // Row 1: label & badge aktif
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -247,20 +392,20 @@ class _GpsCard extends StatelessWidget {
                     ],
                   ),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: provider.isGpsActive
+                      color: widget.provider.isGpsActive
                           ? Colors.greenAccent.withOpacity(0.2)
                           : Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      provider.isGpsActive ? 'AKTIF' : 'NON-AKTIF',
+                      widget.provider.isGpsActive ? 'AKTIF' : 'NON-AKTIF',
                       style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                        color: provider.isGpsActive
+                        color: widget.provider.isGpsActive
                             ? Colors.greenAccent
                             : Colors.white54,
                       ),
@@ -269,8 +414,6 @@ class _GpsCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
-
-              // Row 2: koordinat & tombol play
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -286,9 +429,9 @@ class _GpsCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${vehicle.lat.toStringAsFixed(4)}, ${vehicle.lng.toStringAsFixed(4)}',
+                        '${widget.vehicle.lat.toStringAsFixed(5)}, ${widget.vehicle.lng.toStringAsFixed(5)}',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'monospace',
                           color: Colors.white,
@@ -297,30 +440,36 @@ class _GpsCard extends StatelessWidget {
                     ],
                   ),
                   GestureDetector(
-                    onTap: () => provider.toggleGps(),
+                    onTap: _requestingPermission ? null : _handleGpsToggle,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       width: 64,
                       height: 64,
                       decoration: BoxDecoration(
-                        color: provider.isGpsActive
+                        color: widget.provider.isGpsActive
                             ? Colors.white
                             : Colors.white.withOpacity(0.15),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: Colors.white,
-                          width: provider.isGpsActive ? 0 : 2,
+                          width: widget.provider.isGpsActive ? 0 : 2,
                         ),
                       ),
-                      child: Icon(
-                        provider.isGpsActive
-                            ? Icons.pause_circle_filled_rounded
-                            : Icons.play_arrow_rounded,
-                        color: provider.isGpsActive
-                            ? Colors.indigo[600]
-                            : Colors.white,
-                        size: 36,
-                      ),
+                      child: _requestingPermission
+                          ? const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 2.5),
+                            )
+                          : Icon(
+                              widget.provider.isGpsActive
+                                  ? Icons.pause_circle_filled_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: widget.provider.isGpsActive
+                                  ? Colors.indigo[600]
+                                  : Colors.white,
+                              size: 36,
+                            ),
                     ),
                   ),
                 ],
@@ -334,6 +483,7 @@ class _GpsCard extends StatelessWidget {
 }
 
 // ─── Status Action Button ─────────────────────────────────────────────────────
+
 class _StatusAction extends StatelessWidget {
   final bool active;
   final bool disabled;
@@ -401,65 +551,8 @@ class _StatusAction extends StatelessWidget {
   }
 }
 
-// ─── Route Info Card ──────────────────────────────────────────────────────────
-class _RouteInfoCard extends StatelessWidget {
-  const _RouteInfoCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey[100]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-          )
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(Icons.location_on, color: Colors.blue[600], size: 26),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Cek Rute Tujuan',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Color(0xFF1E293B),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Gudang A • 12.5 KM Lagi',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                ),
-              ],
-            ),
-          ),
-          Icon(Icons.chevron_right, color: Colors.grey[300]),
-        ],
-      ),
-    );
-  }
-}
-
 // ─── Bottom Navigation Bar ───────────────────────────────────────────────────
+
 class _BottomNav extends StatelessWidget {
   const _BottomNav();
 
@@ -474,21 +567,15 @@ class _BottomNav extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
+          _NavItem(icon: Icons.local_shipping, label: 'Driver', active: true),
           _NavItem(
-            icon: Icons.local_shipping,
-            label: 'Driver',
-            active: true,
-          ),
+              icon: Icons.notifications_none_rounded,
+              label: 'Notif',
+              active: false),
           _NavItem(
-            icon: Icons.notifications_none_rounded,
-            label: 'Notif',
-            active: false,
-          ),
-          _NavItem(
-            icon: Icons.settings_outlined,
-            label: 'Pengaturan',
-            active: false,
-          ),
+              icon: Icons.settings_outlined,
+              label: 'Pengaturan',
+              active: false),
         ],
       ),
     );
@@ -511,11 +598,9 @@ class _NavItem extends StatelessWidget {
       children: [
         Icon(icon, color: color, size: 24),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: color),
-        ),
+        Text(label,
+            style: TextStyle(
+                fontSize: 10, fontWeight: FontWeight.bold, color: color)),
       ],
     );
   }

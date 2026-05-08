@@ -2,13 +2,14 @@ class Vehicle {
   final String id;
   String driverName;
   String plateNumber;
-  String vehicleType;   // jenis: Mobil, Truk, dll
-  String vehicleBrand;  // merek: Toyota, Mitsubishi, dll
-  int vehicleYear;      // tahun: 2020, 2021, dll
-  String vehicleColor;  // warna: Putih, Hitam, dll
+  String vehicleType;
+  String vehicleBrand;
+  int vehicleYear;
+  String vehicleColor;
   String status;
   double lat;
   double lng;
+  double heading; // derajat arah kendaraan (0–360)
   List<String> logs;
 
   Vehicle({
@@ -22,6 +23,7 @@ class Vehicle {
     this.status = 'idle',
     required this.lat,
     required this.lng,
+    this.heading = 0.0,
     List<String>? logs,
   }) : logs = logs ?? [];
 
@@ -36,8 +38,9 @@ class Vehicle {
       vehicleYear: (map['vehicleYear'] as num?)?.toInt() ?? 2020,
       vehicleColor: map['vehicleColor'] ?? '',
       status: map['status'] ?? 'idle',
-      lat: (map['lat'] as num?)?.toDouble() ?? 0.5,
-      lng: (map['lng'] as num?)?.toDouble() ?? 0.5,
+      lat: (map['lat'] as num?)?.toDouble() ?? -7.6298,
+      lng: (map['lng'] as num?)?.toDouble() ?? 111.5225,
+      heading: (map['heading'] as num?)?.toDouble() ?? 0.0,
     );
   }
 
@@ -53,6 +56,7 @@ class Vehicle {
       'status': status,
       'lat': lat,
       'lng': lng,
+      'heading': heading,
     };
   }
 }

@@ -10,39 +10,40 @@ import '../utils/status_theme.dart';
 class FleetProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  // Koordinat real di sekitar Madiun, Jawa Timur
   List<Vehicle> vehicles = [
     Vehicle(
       id: 'v1',
       driverName: 'Budi Santoso',
-      plateNumber: 'B 1234 CD',
+      plateNumber: 'AE 1234 CD',
       vehicleType: 'Mobil',
       vehicleBrand: 'Toyota',
       vehicleYear: 2021,
       vehicleColor: 'Putih',
-      lat: 0.25,
-      lng: 0.35,
+      lat: -7.6298,
+      lng: 111.5225,
     ),
     Vehicle(
       id: 'v2',
       driverName: 'Agus Setiawan',
-      plateNumber: 'D 5678 EF',
-      vehicleType: 'Mobil',
+      plateNumber: 'AE 5678 EF',
+      vehicleType: 'Truk',
       vehicleBrand: 'Mitsubishi',
       vehicleYear: 2020,
       vehicleColor: 'Hitam',
-      lat: 0.65,
-      lng: 0.75,
+      lat: -7.6350,
+      lng: 111.5300,
     ),
     Vehicle(
       id: 'v3',
       driverName: 'Rina Kartika',
-      plateNumber: 'L 9012 GH',
+      plateNumber: 'AE 9012 GH',
       vehicleType: 'Mobil',
       vehicleBrand: 'Daihatsu',
       vehicleYear: 2022,
       vehicleColor: 'Silver',
-      lat: 0.45,
-      lng: 0.55,
+      lat: -7.6250,
+      lng: 111.5180,
     ),
   ];
 
@@ -61,8 +62,8 @@ class FleetProvider extends ChangeNotifier {
     required String uid,
     required String driverName,
     required String plateNumber,
-    double lat = 0.5,
-    double lng = 0.5,
+    double lat = -7.6298,
+    double lng = 111.5225,
   }) {
     final idx = vehicles.indexWhere((v) => v.id == uid);
     if (idx == -1) {
@@ -111,12 +112,49 @@ class FleetProvider extends ChangeNotifier {
       if (idx != -1) {
         final v = vehicles[idx];
         if (v.status == 'berangkat' || v.status == 'perjalanan') {
-          v.lat = min(max(v.lat + (random.nextDouble() - 0.5) * 0.02, 0.1), 0.9);
-          v.lng = min(max(v.lng + (random.nextDouble() - 0.5) * 0.02, 0.1), 0.9);
+          // Simulasi pergerakan di area Madiun (offset kecil dalam derajat lat/lng)
+          final deltaLat = (random.nextDouble() - 0.5) * 0.001;
+          final deltaLng = (random.nextDouble() - 0.5) * 0.001;
+          v.lat = (v.lat + deltaLat).clamp(-7.70, -7.58);
+          v.lng = (v.lng + deltaLng).clamp(111.48, 111.58);
+          // Hitung heading berdasarkan arah pergerakan
+          v.heading = (atan2(deltaLng, deltaLat) * 180 / pi + 360) % 360;
+
+          // Update posisi ke Firestore (untuk driver login)
+          _db.collection('users').doc(currentDriverId).update({
+            'lat': v.lat,
+            'lng': v.lng,
+            'heading': v.heading,
+          }).catchError((_) {});
+
           notifyListeners();
         }
       }
     });
+  }
+
+  // ─── Update posisi dari GPS device nyata ──────────────
+  void updateGpsPosition({
+    required String id,
+    required double lat,
+    required double lng,
+    double heading = 0,
+  }) {
+    final idx = vehicles.indexWhere((v) => v.id == id);
+    if (idx != -1) {
+      vehicles[idx].lat = lat;
+      vehicles[idx].lng = lng;
+      vehicles[idx].heading = heading;
+      notifyListeners();
+
+      // Simpan ke Firestore
+      _db.collection('users').doc(id).update({
+        'lat': lat,
+        'lng': lng,
+        'heading': heading,
+        'lastSeen': FieldValue.serverTimestamp(),
+      }).catchError((_) {});
+    }
   }
 
   // ─── Status ────────────────────────────────────────────
@@ -136,7 +174,6 @@ class FleetProvider extends ChangeNotifier {
 
   // ─── CRUD + Firestore ──────────────────────────────────
 
-  /// Tambah armada baru — simpan ke Firestore
   Future<void> addVehicle({
     required String driverName,
     required String plateNumber,
@@ -146,6 +183,8 @@ class FleetProvider extends ChangeNotifier {
     required String vehicleColor,
   }) async {
     final docRef = _db.collection('vehicles').doc();
+    final random = Random();
+    // Posisi acak di sekitar Madiun
     final newVehicle = Vehicle(
       id: docRef.id,
       driverName: driverName,
@@ -154,11 +193,10 @@ class FleetProvider extends ChangeNotifier {
       vehicleBrand: vehicleBrand,
       vehicleYear: vehicleYear,
       vehicleColor: vehicleColor,
-      lat: 0.4 + (Random().nextDouble() * 0.2),
-      lng: 0.4 + (Random().nextDouble() * 0.2),
+      lat: -7.6298 + (random.nextDouble() - 0.5) * 0.02,
+      lng: 111.5225 + (random.nextDouble() - 0.5) * 0.02,
     );
 
-    // Simpan ke Firestore
     await docRef.set({
       ...newVehicle.toMap(),
       'createdAt': FieldValue.serverTimestamp(),
@@ -168,7 +206,6 @@ class FleetProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Update data armada — update ke Firestore
   Future<void> updateVehicleData({
     required String id,
     required String driverName,
@@ -187,7 +224,6 @@ class FleetProvider extends ChangeNotifier {
       vehicles[idx].vehicleYear = vehicleYear;
       vehicles[idx].vehicleColor = vehicleColor;
 
-      // Update ke Firestore (fire-and-forget, tidak perlu await di UI)
       _db.collection('vehicles').doc(id).update({
         'driverName': driverName,
         'plateNumber': plateNumber,
@@ -201,7 +237,6 @@ class FleetProvider extends ChangeNotifier {
     }
   }
 
-  /// Hapus armada — hapus dari Firestore
   Future<void> deleteVehicle(String id) async {
     vehicles.removeWhere((v) => v.id == id);
     if (currentDriverId == id) {
@@ -210,7 +245,6 @@ class FleetProvider extends ChangeNotifier {
       _gpsTimer?.cancel();
     }
 
-    // Hapus dari Firestore
     _db.collection('vehicles').doc(id).delete().catchError((_) {});
 
     notifyListeners();
