@@ -9,7 +9,8 @@ class Vehicle {
   String status;
   double lat;
   double lng;
-  double heading; // derajat arah kendaraan (0–360)
+  double heading;
+  String driverId; // Referensi ke dokumen drivers
   List<String> logs;
 
   Vehicle({
@@ -24,10 +25,10 @@ class Vehicle {
     required this.lat,
     required this.lng,
     this.heading = 0.0,
+    this.driverId = '',
     List<String>? logs,
   }) : logs = logs ?? [];
 
-  /// Buat Vehicle dari dokumen Firestore
   factory Vehicle.fromMap(String id, Map<String, dynamic> map) {
     return Vehicle(
       id: id,
@@ -41,10 +42,10 @@ class Vehicle {
       lat: (map['lat'] as num?)?.toDouble() ?? -7.6298,
       lng: (map['lng'] as num?)?.toDouble() ?? 111.5225,
       heading: (map['heading'] as num?)?.toDouble() ?? 0.0,
+      driverId: map['driverId'] ?? '',
     );
   }
 
-  /// Konversi ke Map untuk disimpan ke Firestore
   Map<String, dynamic> toMap() {
     return {
       'driverName': driverName,
@@ -57,6 +58,7 @@ class Vehicle {
       'lat': lat,
       'lng': lng,
       'heading': heading,
+      'driverId': driverId,
     };
   }
 }

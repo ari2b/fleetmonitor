@@ -1,73 +1,98 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../providers/fleet_provider.dart';
+import '../../../models/driver_model.dart';
 import '../../../models/vehicle_model.dart';
+import 'admin_kelola_kendaraan_view.dart';
 
-// ─── Konstanta dropdown ────────────────────────────────────────────────────────
+// ─── Konstanta ────────────────────────────────────────────────────────────────
 
-const List<String> kVehicleTypes = ['Mobil', 'Truk', 'Pickup', 'Van/Minibus', 'Motor'];
+const List<String> kLicenseTypes = ['SIM A', 'SIM B1', 'SIM B2', 'SIM C'];
 
-const List<String> kVehicleBrands = [
-  'Toyota',
-  'Mitsubishi',
-  'Daihatsu',
-  'Honda',
-  'Suzuki',
-  'Isuzu',
-  'Hino',
-  'Ford',
-  'Hyundai',
-  'Wuling',
-  'Lainnya',
-];
+const List<String> kDriverStatus = ['aktif', 'nonaktif'];
 
-const List<String> kVehicleColors = [
-  'Putih',
-  'Hitam',
-  'Silver',
-  'Abu-abu',
-  'Merah',
-  'Biru',
-  'Kuning',
-  'Hijau',
-  'Orange',
-  'Coklat',
-];
+// ─── Tab Kelola (entry point) ─────────────────────────────────────────────────
 
-// ─── Ikon per jenis kendaraan ─────────────────────────────────────────────────
-
-IconData _iconForType(String type) {
-  switch (type) {
-    case 'Truk':
-      return Icons.local_shipping;
-    case 'Pickup':
-      return Icons.airport_shuttle;
-    case 'Van/Minibus':
-      return Icons.directions_bus;
-    case 'Motor':
-      return Icons.two_wheeler;
-    default:
-      return Icons.directions_car;
-  }
-}
-
-// ─── Tab Kelola ───────────────────────────────────────────────────────────────
-
-class AdminKelolaTab extends StatelessWidget {
+class AdminKelolaTab extends StatefulWidget {
   final FleetProvider provider;
   const AdminKelolaTab({super.key, required this.provider});
 
-  void _openModal(BuildContext context, {Vehicle? vehicle}) {
+  @override
+  State<AdminKelolaTab> createState() => _AdminKelolaTabState();
+}
+
+class _AdminKelolaTabState extends State<AdminKelolaTab> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  List<Driver> _drivers = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDrivers();
+  }
+
+  Future<void> _loadDrivers() async {
+    setState(() => _isLoading = true);
+    try {
+      final snap = await _db
+          .collection('drivers')
+          .orderBy('createdAt', descending: false)
+          .get();
+      _drivers = snap.docs
+          .map((d) => Driver.fromMap(d.id, d.data()))
+          .toList();
+    } catch (_) {
+      // Koleksi mungkin kosong / belum ada
+      _drivers = [];
+    }
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Future<void> _saveDriver(Driver driver, {bool isNew = false}) async {
+    final data = {
+      ...driver.toMap(),
+      if (isNew) 'createdAt': FieldValue.serverTimestamp(),
+    };
+    if (isNew) {
+      final ref = await _db.collection('drivers').add(data);
+      driver = Driver.fromMap(ref.id, driver.toMap());
+      _drivers.add(driver);
+    } else {
+      await _db.collection('drivers').doc(driver.id).update(data);
+      final idx = _drivers.indexWhere((d) => d.id == driver.id);
+      if (idx != -1) _drivers[idx] = driver;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _deleteDriver(String id) async {
+    // Hapus semua kendaraan milik driver ini terlebih dahulu
+    final vehicles = await _db
+        .collection('vehicles')
+        .where('driverId', isEqualTo: id)
+        .get();
+    for (final v in vehicles.docs) {
+      await _db.collection('vehicles').doc(v.id).delete();
+      widget.provider.deleteVehicle(v.id);
+    }
+    await _db.collection('drivers').doc(id).delete();
+    _drivers.removeWhere((d) => d.id == id);
+    if (mounted) setState(() {});
+  }
+
+  void _openDriverForm({Driver? driver}) {
     showDialog(
       context: context,
       barrierDismissible: true,
-      builder: (context) => _VehicleFormDialog(
-        provider: provider,
-        vehicle: vehicle,
+      builder: (_) => _DriverFormDialog(
+        driver: driver,
+        onSave: (d, isNew) => _saveDriver(d, isNew: isNew),
       ),
     );
   }
 
-  void _confirmDelete(BuildContext context, String id, String plateNumber) {
+  void _confirmDeleteDriver(Driver driver) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -76,228 +101,170 @@ class AdminKelolaTab extends StatelessWidget {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.red),
             SizedBox(width: 8),
-            Text('Hapus Armada'),
+            Text('Hapus Driver'),
           ],
         ),
         content: Text(
-            'Apakah Anda yakin ingin menghapus kendaraan $plateNumber?'),
+          'Hapus driver "${driver.name}"?\n\nSemua kendaraan yang terdaftar pada driver ini juga akan dihapus.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Batal'),
           ),
           ElevatedButton(
-            onPressed: () {
-              provider.deleteVehicle(id);
+            onPressed: () async {
               Navigator.pop(ctx);
+              await _deleteDriver(driver.id);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red[600],
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
             ),
-            child:
-                const Text('Hapus', style: TextStyle(color: Colors.white)),
+            child: const Text('Hapus', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: provider,
-      builder: (context, _) {
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            // ── Tombol Tambah ──────────────────────────────
-            OutlinedButton.icon(
-              onPressed: () => _openModal(context),
-              icon: Icon(Icons.add, color: Colors.indigo[600]),
-              label: Text(
-                'Tambah Armada Baru',
-                style: TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.indigo[600]),
-              ),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 56),
-                side: BorderSide(color: Colors.indigo[200]!, width: 1.5),
-                backgroundColor: Colors.indigo[50],
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Daftar Armada ──────────────────────────────
-            ...provider.vehicles.map((v) => _VehicleCard(
-                  vehicle: v,
-                  onEdit: () => _openModal(context, vehicle: v),
-                  onDelete: () =>
-                      _confirmDelete(context, v.id, v.plateNumber),
-                )),
-          ],
-        );
-      },
+  void _openKendaraanView(Driver driver) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminKelolaKendaraanView(
+          driver: driver,
+          provider: widget.provider,
+        ),
+      ),
     );
   }
-}
-
-// ─── Card Armada ──────────────────────────────────────────────────────────────
-
-class _VehicleCard extends StatelessWidget {
-  final Vehicle vehicle;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  const _VehicleCard({
-    required this.vehicle,
-    required this.onEdit,
-    required this.onDelete,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Baris atas: ikon + plat + nama + tombol ──
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.indigo[50],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(_iconForType(vehicle.vehicleType),
-                    color: Colors.indigo[400], size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      vehicle.plateNumber,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    Text(
-                      vehicle.driverName,
-                      style: TextStyle(
-                          color: Colors.grey[600], fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              // Tombol Edit & Hapus
-              Row(
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadDrivers,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
                 children: [
-                  _ActionBtn(
-                    icon: Icons.edit,
-                    color: Colors.blue,
-                    onTap: onEdit,
+                  // ── Header info ───────────────────────────
+                  _SectionHeader(
+                    icon: Icons.people_alt_rounded,
+                    title: 'Master Data Driver',
+                    subtitle:
+                        '${_drivers.length} driver terdaftar • Ketuk driver untuk kelola kendaraan',
+                    color: Colors.indigo,
                   ),
-                  const SizedBox(width: 8),
-                  _ActionBtn(
-                    icon: Icons.delete_outline,
-                    color: Colors.red,
-                    onTap: onDelete,
+                  const SizedBox(height: 12),
+
+                  // ── Tombol Tambah Driver ──────────────────
+                  OutlinedButton.icon(
+                    onPressed: () => _openDriverForm(),
+                    icon: Icon(Icons.person_add_rounded,
+                        color: Colors.indigo[600]),
+                    label: Text(
+                      'Tambah Driver Baru',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.indigo[600]),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 56),
+                      side: BorderSide(color: Colors.indigo[200]!, width: 1.5),
+                      backgroundColor: Colors.indigo[50],
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // ── Daftar Driver ─────────────────────────
+                  if (_drivers.isEmpty)
+                    _EmptyState(
+                      icon: Icons.person_off_rounded,
+                      message:
+                          'Belum ada driver terdaftar.\nTambahkan driver terlebih dahulu.',
+                    )
+                  else
+                    ..._drivers.map((driver) => _DriverCard(
+                          driver: driver,
+                          provider: widget.provider,
+                          onEdit: () => _openDriverForm(driver: driver),
+                          onDelete: () => _confirmDeleteDriver(driver),
+                          onTapKendaraan: () => _openKendaraanView(driver),
+                        )),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 1),
-          const SizedBox(height: 10),
-
-          // ── Baris bawah: detail kendaraan ──────────────
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              _InfoChip(
-                icon: Icons.category_outlined,
-                label: vehicle.vehicleType,
-                color: Colors.indigo,
-              ),
-              _InfoChip(
-                icon: Icons.directions_car_outlined,
-                label: vehicle.vehicleBrand.isNotEmpty
-                    ? vehicle.vehicleBrand
-                    : '-',
-                color: Colors.teal,
-              ),
-              _InfoChip(
-                icon: Icons.calendar_today_outlined,
-                label: vehicle.vehicleYear.toString(),
-                color: Colors.orange,
-              ),
-              _InfoChip(
-                icon: Icons.palette_outlined,
-                label: vehicle.vehicleColor.isNotEmpty
-                    ? vehicle.vehicleColor
-                    : '-',
-                color: Colors.purple,
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
     );
   }
 }
 
-class _InfoChip extends StatelessWidget {
+// ─── Section Header ───────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
   final IconData icon;
-  final String label;
+  final String title;
+  final String subtitle;
   final MaterialColor color;
 
-  const _InfoChip({
+  const _SectionHeader({
     required this.icon,
-    required this.label,
+    required this.title,
+    required this.subtitle,
     required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color[50],
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color[100]!),
+        gradient: LinearGradient(
+          colors: [color[600]!, color[400]!],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: color[600]),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: color[700]),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.8), fontSize: 11)),
+              ],
+            ),
           ),
         ],
       ),
@@ -305,12 +272,232 @@ class _InfoChip extends StatelessWidget {
   }
 }
 
-class _ActionBtn extends StatelessWidget {
+// ─── Driver Card ──────────────────────────────────────────────────────────────
+
+class _DriverCard extends StatefulWidget {
+  final Driver driver;
+  final FleetProvider provider;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onTapKendaraan;
+
+  const _DriverCard({
+    required this.driver,
+    required this.provider,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onTapKendaraan,
+  });
+
+  @override
+  State<_DriverCard> createState() => _DriverCardState();
+}
+
+class _DriverCardState extends State<_DriverCard> {
+  int _vehicleCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _countVehicles();
+  }
+
+  Future<void> _countVehicles() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('vehicles')
+          .where('driverId', isEqualTo: widget.driver.id)
+          .get();
+      if (mounted) setState(() => _vehicleCount = snap.docs.length);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isAktif = widget.driver.status == 'aktif';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Baris utama ──────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                // Avatar inisial
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: isAktif ? Colors.indigo[50] : Colors.grey[100],
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color:
+                          isAktif ? Colors.indigo[200]! : Colors.grey[300]!,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    widget.driver.name.isNotEmpty
+                        ? widget.driver.name[0].toUpperCase()
+                        : '?',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isAktif ? Colors.indigo[600] : Colors.grey[400],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.driver.name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 15),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // Badge status
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isAktif
+                                  ? Colors.green[50]
+                                  : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isAktif
+                                    ? Colors.green[300]!
+                                    : Colors.grey[300]!,
+                              ),
+                            ),
+                            child: Text(
+                              isAktif ? 'AKTIF' : 'NON-AKTIF',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: isAktif
+                                    ? Colors.green[700]
+                                    : Colors.grey[500],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      if (widget.driver.phone.isNotEmpty)
+                        Text(
+                          widget.driver.phone,
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 12),
+                        ),
+                      Text(
+                        widget.driver.licenseType,
+                        style: TextStyle(
+                            color: Colors.indigo[400],
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Tombol edit & hapus
+                Column(
+                  children: [
+                    _ActionIconBtn(
+                      icon: Icons.edit_rounded,
+                      color: Colors.blue,
+                      onTap: widget.onEdit,
+                    ),
+                    const SizedBox(height: 6),
+                    _ActionIconBtn(
+                      icon: Icons.delete_outline_rounded,
+                      color: Colors.red,
+                      onTap: widget.onDelete,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // ── Divider ──────────────────────────────────
+          Divider(height: 1, color: Colors.grey[100]),
+
+          // ── Footer: Kendaraan ─────────────────────────
+          InkWell(
+            onTap: widget.onTapKendaraan,
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(16),
+              bottomRight: Radius.circular(16),
+            ),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.directions_car_rounded,
+                      color: Colors.indigo[400], size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$_vehicleCount Kendaraan Terdaftar',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.indigo[600],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    'Kelola Kendaraan',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.indigo[400],
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.arrow_forward_ios_rounded,
+                      color: Colors.indigo[300], size: 12),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Action Icon Button ───────────────────────────────────────────────────────
+
+class _ActionIconBtn extends StatelessWidget {
   final IconData icon;
   final MaterialColor color;
   final VoidCallback onTap;
 
-  const _ActionBtn({
+  const _ActionIconBtn({
     required this.icon,
     required this.color,
     required this.onTap,
@@ -320,76 +507,91 @@ class _ActionBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(7),
         decoration: BoxDecoration(
           color: color[50],
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(icon, color: color[600], size: 18),
+        child: Icon(icon, color: color[600], size: 16),
       ),
     );
   }
 }
 
-// ─── Dialog Form Armada ───────────────────────────────────────────────────────
+// ─── Empty State ──────────────────────────────────────────────────────────────
 
-class _VehicleFormDialog extends StatefulWidget {
-  final FleetProvider provider;
-  final Vehicle? vehicle; // null = tambah baru, tidak null = edit
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String message;
 
-  const _VehicleFormDialog({
-    required this.provider,
-    this.vehicle,
-  });
+  const _EmptyState({required this.icon, required this.message});
 
   @override
-  State<_VehicleFormDialog> createState() => _VehicleFormDialogState();
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: Colors.grey[400], fontSize: 14, height: 1.5),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-class _VehicleFormDialogState extends State<_VehicleFormDialog> {
+// ─── Dialog Form Driver ───────────────────────────────────────────────────────
+
+class _DriverFormDialog extends StatefulWidget {
+  final Driver? driver;
+  final Future<void> Function(Driver driver, bool isNew) onSave;
+
+  const _DriverFormDialog({this.driver, required this.onSave});
+
+  @override
+  State<_DriverFormDialog> createState() => _DriverFormDialogState();
+}
+
+class _DriverFormDialogState extends State<_DriverFormDialog> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _driverNameCtrl;
-  late TextEditingController _plateNumberCtrl;
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _licenseCtrl;
 
-  late String _selectedType;
-  late String _selectedBrand;
-  late String _selectedColor;
-  late int _selectedYear;
-
+  late String _selectedLicenseType;
+  late String _selectedStatus;
   bool _isSaving = false;
 
-  bool get isEdit => widget.vehicle != null;
-
-  // Tahun 10 tahun ke belakang sampai tahun ini
-  List<int> get _years {
-    final now = DateTime.now().year;
-    return List.generate(now - 2009, (i) => now - i);
-  }
+  bool get isEdit => widget.driver != null;
 
   @override
   void initState() {
     super.initState();
-    final v = widget.vehicle;
-    _driverNameCtrl = TextEditingController(text: v?.driverName ?? '');
-    _plateNumberCtrl = TextEditingController(text: v?.plateNumber ?? '');
-    _selectedType = v?.vehicleType ?? kVehicleTypes.first;
-    _selectedBrand =
-        (v?.vehicleBrand != null && kVehicleBrands.contains(v!.vehicleBrand))
-            ? v.vehicleBrand
-            : kVehicleBrands.first;
-    _selectedColor =
-        (v?.vehicleColor != null && kVehicleColors.contains(v!.vehicleColor))
-            ? v.vehicleColor
-            : kVehicleColors.first;
-    _selectedYear = v?.vehicleYear ?? DateTime.now().year;
+    final d = widget.driver;
+    _nameCtrl = TextEditingController(text: d?.name ?? '');
+    _emailCtrl = TextEditingController(text: d?.email ?? '');
+    _phoneCtrl = TextEditingController(text: d?.phone ?? '');
+    _licenseCtrl = TextEditingController(text: d?.licenseNumber ?? '');
+    _selectedLicenseType = d?.licenseType ?? kLicenseTypes[1];
+    _selectedStatus = d?.status ?? 'aktif';
   }
 
   @override
   void dispose() {
-    _driverNameCtrl.dispose();
-    _plateNumberCtrl.dispose();
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _licenseCtrl.dispose();
     super.dispose();
   }
 
@@ -397,47 +599,61 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
 
-    if (isEdit) {
-      await widget.provider.updateVehicleData(
-        id: widget.vehicle!.id,
-        driverName: _driverNameCtrl.text.trim(),
-        plateNumber: _plateNumberCtrl.text.trim().toUpperCase(),
-        vehicleType: _selectedType,
-        vehicleBrand: _selectedBrand,
-        vehicleYear: _selectedYear,
-        vehicleColor: _selectedColor,
-      );
-    } else {
-      await widget.provider.addVehicle(
-        driverName: _driverNameCtrl.text.trim(),
-        plateNumber: _plateNumberCtrl.text.trim().toUpperCase(),
-        vehicleType: _selectedType,
-        vehicleBrand: _selectedBrand,
-        vehicleYear: _selectedYear,
-        vehicleColor: _selectedColor,
-      );
-    }
+    final driver = Driver(
+      id: widget.driver?.id ?? '',
+      name: _nameCtrl.text.trim(),
+      email: _emailCtrl.text.trim(),
+      phone: _phoneCtrl.text.trim(),
+      licenseNumber: _licenseCtrl.text.trim(),
+      licenseType: _selectedLicenseType,
+      status: _selectedStatus,
+    );
 
+    await widget.onSave(driver, !isEdit);
     if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      insetPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Header ────────────────────────────────────
-          _DialogHeader(
-            isEdit: isEdit,
-            onClose: () => Navigator.pop(context),
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.indigo[600],
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(24),
+                topRight: Radius.circular(24),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.person_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isEdit ? 'Edit Data Driver' : 'Tambah Driver Baru',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => Navigator.pop(context),
+                  child: const Icon(Icons.close,
+                      color: Colors.white70, size: 20),
+                ),
+              ],
+            ),
           ),
 
-          // ── Form ──────────────────────────────────────
+          // Form
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -446,77 +662,63 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Nama Driver
-                    _fieldLabel('NAMA DRIVER'),
+                    _label('NAMA LENGKAP *'),
                     const SizedBox(height: 8),
-                    _buildTextField(
-                      controller: _driverNameCtrl,
-                      hint: 'Masukkan nama driver...',
+                    _textField(
+                      ctrl: _nameCtrl,
+                      hint: 'Nama lengkap driver',
                       icon: Icons.person_outline,
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Nama tidak boleh kosong'
                           : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
 
-                    // Plat Nomor
-                    _fieldLabel('PLAT NOMOR KENDARAAN'),
+                    _label('NOMOR TELEPON'),
                     const SizedBox(height: 8),
-                    _buildTextField(
-                      controller: _plateNumberCtrl,
-                      hint: 'Contoh: B 1234 CD',
+                    _textField(
+                      ctrl: _phoneCtrl,
+                      hint: '08xxxxxxxxxx',
+                      icon: Icons.phone_outlined,
+                      keyboard: TextInputType.phone,
+                    ),
+                    const SizedBox(height: 14),
+
+                    _label('EMAIL'),
+                    const SizedBox(height: 8),
+                    _textField(
+                      ctrl: _emailCtrl,
+                      hint: 'email@contoh.com',
+                      icon: Icons.email_outlined,
+                      keyboard: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 14),
+
+                    _label('NOMOR SIM'),
+                    const SizedBox(height: 8),
+                    _textField(
+                      ctrl: _licenseCtrl,
+                      hint: 'Nomor SIM driver',
                       icon: Icons.credit_card_outlined,
                       caps: TextCapitalization.characters,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Plat nomor tidak boleh kosong'
-                          : null,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
 
-                    // Jenis Kendaraan
-                    _fieldLabel('JENIS KENDARAAN'),
-                    const SizedBox(height: 8),
-                    _buildDropdown<String>(
-                      value: _selectedType,
-                      icon: Icons.category_outlined,
-                      items: kVehicleTypes,
-                      labelBuilder: (e) => e,
-                      onChanged: (v) =>
-                          setState(() => _selectedType = v!),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Merek Kendaraan
-                    _fieldLabel('MEREK KENDARAAN'),
-                    const SizedBox(height: 8),
-                    _buildDropdown<String>(
-                      value: _selectedBrand,
-                      icon: Icons.directions_car_outlined,
-                      items: kVehicleBrands,
-                      labelBuilder: (e) => e,
-                      onChanged: (v) =>
-                          setState(() => _selectedBrand = v!),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Tahun & Warna — side by side
                     Row(
                       children: [
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _fieldLabel('TAHUN'),
+                              _label('JENIS SIM'),
                               const SizedBox(height: 8),
-                              _buildDropdown<int>(
-                                value: _selectedYear,
-                                icon:
-                                    Icons.calendar_today_outlined,
-                                items: _years,
-                                labelBuilder: (e) => e.toString(),
-                                onChanged: (v) => setState(
-                                    () => _selectedYear = v!),
+                              _dropdown<String>(
+                                value: _selectedLicenseType,
+                                icon: Icons.badge_outlined,
+                                items: kLicenseTypes,
+                                labelBuilder: (e) => e,
+                                onChanged: (v) =>
+                                    setState(() => _selectedLicenseType = v!),
                               ),
                             ],
                           ),
@@ -524,18 +726,18 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _fieldLabel('WARNA'),
+                              _label('STATUS'),
                               const SizedBox(height: 8),
-                              _buildDropdown<String>(
-                                value: _selectedColor,
-                                icon: Icons.palette_outlined,
-                                items: kVehicleColors,
-                                labelBuilder: (e) => e,
-                                onChanged: (v) => setState(
-                                    () => _selectedColor = v!),
+                              _dropdown<String>(
+                                value: _selectedStatus,
+                                icon: Icons.toggle_on_outlined,
+                                items: kDriverStatus,
+                                labelBuilder: (e) =>
+                                    e[0].toUpperCase() + e.substring(1),
+                                onChanged: (v) =>
+                                    setState(() => _selectedStatus = v!),
                               ),
                             ],
                           ),
@@ -544,7 +746,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Tombol Aksi
                     Row(
                       children: [
                         Expanded(
@@ -553,14 +754,12 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size(0, 48),
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(12)),
-                              side: BorderSide(
-                                  color: Colors.grey[300]!),
+                                  borderRadius: BorderRadius.circular(12)),
+                              side: BorderSide(color: Colors.grey[300]!),
                             ),
                             child: Text('Batal',
-                                style: TextStyle(
-                                    color: Colors.grey[700])),
+                                style:
+                                    TextStyle(color: Colors.grey[700])),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -570,11 +769,9 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size(0, 48),
                               backgroundColor: Colors.indigo[600],
-                              disabledBackgroundColor:
-                                  Colors.indigo[300],
+                              disabledBackgroundColor: Colors.indigo[300],
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                             child: _isSaving
@@ -585,11 +782,10 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                                         color: Colors.white,
                                         strokeWidth: 2.5),
                                   )
-                                : const Text('Simpan Data',
+                                : const Text('Simpan',
                                     style: TextStyle(
                                         color: Colors.white,
-                                        fontWeight:
-                                            FontWeight.bold)),
+                                        fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],
@@ -604,27 +800,27 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
     );
   }
 
-  // ── Helper widgets ─────────────────────────────────────
-
-  Widget _fieldLabel(String text) => Text(
+  Widget _label(String text) => Text(
         text,
         style: const TextStyle(
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.bold,
           color: Colors.grey,
           letterSpacing: 0.5,
         ),
       );
 
-  Widget _buildTextField({
-    required TextEditingController controller,
+  Widget _textField({
+    required TextEditingController ctrl,
     required String hint,
     required IconData icon,
+    TextInputType? keyboard,
     TextCapitalization caps = TextCapitalization.words,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
-      controller: controller,
+      controller: ctrl,
+      keyboardType: keyboard,
       textCapitalization: caps,
       decoration: InputDecoration(
         hintText: hint,
@@ -641,8 +837,7 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide:
-              BorderSide(color: Colors.indigo[500]!, width: 2),
+          borderSide: BorderSide(color: Colors.indigo[500]!, width: 2),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -655,7 +850,7 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
     );
   }
 
-  Widget _buildDropdown<T>({
+  Widget _dropdown<T>({
     required T value,
     required IconData icon,
     required List<T> items,
@@ -679,8 +874,7 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide:
-              BorderSide(color: Colors.indigo[500]!, width: 2),
+          borderSide: BorderSide(color: Colors.indigo[500]!, width: 2),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -695,50 +889,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
       dropdownColor: Colors.white,
       borderRadius: BorderRadius.circular(12),
       icon: Icon(Icons.expand_more, color: Colors.grey[400]),
-    );
-  }
-}
-
-// ─── Dialog Header ────────────────────────────────────────────────────────────
-
-class _DialogHeader extends StatelessWidget {
-  final bool isEdit;
-  final VoidCallback onClose;
-
-  const _DialogHeader({required this.isEdit, required this.onClose});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: Colors.indigo[600],
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.storage, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              isEdit ? 'Edit Data Armada' : 'Tambah Armada Baru',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16),
-            ),
-          ),
-          InkWell(
-            onTap: onClose,
-            child: const Icon(Icons.close,
-                color: Colors.white70, size: 20),
-          ),
-        ],
-      ),
     );
   }
 }
