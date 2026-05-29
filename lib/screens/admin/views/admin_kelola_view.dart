@@ -4,10 +4,9 @@ import '../../../providers/fleet_provider.dart';
 import '../../../models/driver_model.dart';
 import '../../../models/vehicle_model.dart';
 import 'admin_kelola_kendaraan_view.dart';
+import 'admin_jadwal_view.dart';
 
 // ─── Konstanta ────────────────────────────────────────────────────────────────
-
-const List<String> kLicenseTypes = ['SIM A', 'SIM B1', 'SIM B2', 'SIM C'];
 
 const List<String> kDriverStatus = ['aktif', 'nonaktif'];
 
@@ -43,7 +42,6 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
           .map((d) => Driver.fromMap(d.id, d.data()))
           .toList();
     } catch (_) {
-      // Koleksi mungkin kosong / belum ada
       _drivers = [];
     }
     if (mounted) setState(() => _isLoading = false);
@@ -67,7 +65,6 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
   }
 
   Future<void> _deleteDriver(String id) async {
-    // Hapus semua kendaraan milik driver ini terlebih dahulu
     final vehicles = await _db
         .collection('vehicles')
         .where('driverId', isEqualTo: id)
@@ -75,6 +72,14 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
     for (final v in vehicles.docs) {
       await _db.collection('vehicles').doc(v.id).delete();
       widget.provider.deleteVehicle(v.id);
+    }
+    // Hapus jadwal milik driver ini
+    final schedules = await _db
+        .collection('schedules')
+        .where('driverId', isEqualTo: id)
+        .get();
+    for (final s in schedules.docs) {
+      await _db.collection('schedules').doc(s.id).delete();
     }
     await _db.collection('drivers').doc(id).delete();
     _drivers.removeWhere((d) => d.id == id);
@@ -105,7 +110,7 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
           ],
         ),
         content: Text(
-          'Hapus driver "${driver.name}"?\n\nSemua kendaraan yang terdaftar pada driver ini juga akan dihapus.',
+          'Hapus driver "${driver.name}"?\n\nSemua kendaraan dan jadwal yang terdaftar pada driver ini juga akan dihapus.',
         ),
         actions: [
           TextButton(
@@ -129,14 +134,41 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
     );
   }
 
-  void _openKendaraanView(Driver driver) {
-    Navigator.push(
+  void _openKendaraanView(Driver driver) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AdminKelolaKendaraanView(
           driver: driver,
           provider: widget.provider,
         ),
+      ),
+    );
+    // Refresh daftar kendaraan di provider setelah kembali
+    await _syncVehiclesFromFirestore();
+  }
+
+  /// Sync semua kendaraan dari Firestore ke FleetProvider
+  Future<void> _syncVehiclesFromFirestore() async {
+    try {
+      final snap = await _db.collection('vehicles').get();
+      final firestoreVehicles =
+          snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList();
+
+      // Ganti list vehicles di provider dengan data terbaru dari Firestore
+      widget.provider.vehicles
+        ..removeWhere((v) => !['v1', 'v2', 'v3'].contains(v.id))
+        ..clear();
+      widget.provider.vehicles.addAll(firestoreVehicles);
+      widget.provider.notifyListeners();
+    } catch (_) {}
+  }
+
+  void _openJadwalView(Driver driver) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminJadwalView(driver: driver),
       ),
     );
   }
@@ -157,7 +189,7 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
                     icon: Icons.people_alt_rounded,
                     title: 'Master Data Driver',
                     subtitle:
-                        '${_drivers.length} driver terdaftar • Ketuk driver untuk kelola kendaraan',
+                        '${_drivers.length} driver terdaftar • Ketuk driver untuk kelola kendaraan & jadwal',
                     color: Colors.indigo,
                   ),
                   const SizedBox(height: 12),
@@ -197,6 +229,7 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
                           onEdit: () => _openDriverForm(driver: driver),
                           onDelete: () => _confirmDeleteDriver(driver),
                           onTapKendaraan: () => _openKendaraanView(driver),
+                          onTapJadwal: () => _openJadwalView(driver),
                         )),
                 ],
               ),
@@ -280,6 +313,7 @@ class _DriverCard extends StatefulWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onTapKendaraan;
+  final VoidCallback onTapJadwal;
 
   const _DriverCard({
     required this.driver,
@@ -287,6 +321,7 @@ class _DriverCard extends StatefulWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onTapKendaraan,
+    required this.onTapJadwal,
   });
 
   @override
@@ -295,20 +330,31 @@ class _DriverCard extends StatefulWidget {
 
 class _DriverCardState extends State<_DriverCard> {
   int _vehicleCount = 0;
+  int _scheduleCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _countVehicles();
+    _loadCounts();
   }
 
-  Future<void> _countVehicles() async {
+  Future<void> _loadCounts() async {
     try {
-      final snap = await FirebaseFirestore.instance
+      final vSnap = await FirebaseFirestore.instance
           .collection('vehicles')
           .where('driverId', isEqualTo: widget.driver.id)
           .get();
-      if (mounted) setState(() => _vehicleCount = snap.docs.length);
+      final sSnap = await FirebaseFirestore.instance
+          .collection('schedules')
+          .where('driverId', isEqualTo: widget.driver.id)
+          .where('status', whereIn: ['pending', 'confirmed'])
+          .get();
+      if (mounted) {
+        setState(() {
+          _vehicleCount = vSnap.docs.length;
+          _scheduleCount = sSnap.docs.length;
+        });
+      }
     } catch (_) {}
   }
 
@@ -336,7 +382,6 @@ class _DriverCardState extends State<_DriverCard> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Avatar inisial
                 Container(
                   width: 52,
                   height: 52,
@@ -377,7 +422,6 @@ class _DriverCardState extends State<_DriverCard> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          // Badge status
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 3),
@@ -412,18 +456,18 @@ class _DriverCardState extends State<_DriverCard> {
                           style:
                               TextStyle(color: Colors.grey[500], fontSize: 12),
                         ),
-                      Text(
-                        widget.driver.licenseType,
-                        style: TextStyle(
-                            color: Colors.indigo[400],
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600),
-                      ),
+                      if (widget.driver.email.isNotEmpty)
+                        Text(
+                          widget.driver.email,
+                          style: TextStyle(
+                              color: Colors.grey[400], fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                     ],
                   ),
                 ),
 
-                // Tombol edit & hapus
                 Column(
                   children: [
                     _ActionIconBtn(
@@ -443,45 +487,80 @@ class _DriverCardState extends State<_DriverCard> {
             ),
           ),
 
-          // ── Divider ──────────────────────────────────
           Divider(height: 1, color: Colors.grey[100]),
 
-          // ── Footer: Kendaraan ─────────────────────────
-          InkWell(
-            onTap: widget.onTapKendaraan,
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(16),
-              bottomRight: Radius.circular(16),
-            ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Icon(Icons.directions_car_rounded,
-                      color: Colors.indigo[400], size: 16),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$_vehicleCount Kendaraan Terdaftar',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.indigo[600],
-                      fontWeight: FontWeight.w600,
+          // ── Footer: Kendaraan & Jadwal ─────────────────────
+          IntrinsicHeight(
+            child: Row(
+              children: [
+                // Kendaraan
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onTapKendaraan,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.directions_car_rounded,
+                              color: Colors.teal[400], size: 15),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '$_vehicleCount Kendaraan',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.teal[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios_rounded,
+                              color: Colors.teal[300], size: 11),
+                        ],
+                      ),
                     ),
                   ),
-                  const Spacer(),
-                  Text(
-                    'Kelola Kendaraan',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.indigo[400],
-                        fontWeight: FontWeight.bold),
+                ),
+
+                VerticalDivider(width: 1, color: Colors.grey[100]),
+
+                // Jadwal
+                Expanded(
+                  child: InkWell(
+                    onTap: widget.onTapJadwal,
+                    borderRadius: const BorderRadius.only(
+                      bottomRight: Radius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.calendar_month_rounded,
+                              color: Colors.orange[400], size: 15),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '$_scheduleCount Jadwal Aktif',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios_rounded,
+                              color: Colors.orange[300], size: 11),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.arrow_forward_ios_rounded,
-                      color: Colors.indigo[300], size: 12),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],
@@ -566,9 +645,7 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
-  late final TextEditingController _licenseCtrl;
 
-  late String _selectedLicenseType;
   late String _selectedStatus;
   bool _isSaving = false;
 
@@ -581,8 +658,6 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
     _nameCtrl = TextEditingController(text: d?.name ?? '');
     _emailCtrl = TextEditingController(text: d?.email ?? '');
     _phoneCtrl = TextEditingController(text: d?.phone ?? '');
-    _licenseCtrl = TextEditingController(text: d?.licenseNumber ?? '');
-    _selectedLicenseType = d?.licenseType ?? kLicenseTypes[1];
     _selectedStatus = d?.status ?? 'aktif';
   }
 
@@ -591,7 +666,6 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
-    _licenseCtrl.dispose();
     super.dispose();
   }
 
@@ -604,8 +678,6 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
       name: _nameCtrl.text.trim(),
       email: _emailCtrl.text.trim(),
       phone: _phoneCtrl.text.trim(),
-      licenseNumber: _licenseCtrl.text.trim(),
-      licenseType: _selectedLicenseType,
       status: _selectedStatus,
     );
 
@@ -694,55 +766,16 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
                     ),
                     const SizedBox(height: 14),
 
-                    _label('NOMOR SIM'),
+                    _label('STATUS'),
                     const SizedBox(height: 8),
-                    _textField(
-                      ctrl: _licenseCtrl,
-                      hint: 'Nomor SIM driver',
-                      icon: Icons.credit_card_outlined,
-                      caps: TextCapitalization.characters,
-                    ),
-                    const SizedBox(height: 14),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _label('JENIS SIM'),
-                              const SizedBox(height: 8),
-                              _dropdown<String>(
-                                value: _selectedLicenseType,
-                                icon: Icons.badge_outlined,
-                                items: kLicenseTypes,
-                                labelBuilder: (e) => e,
-                                onChanged: (v) =>
-                                    setState(() => _selectedLicenseType = v!),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _label('STATUS'),
-                              const SizedBox(height: 8),
-                              _dropdown<String>(
-                                value: _selectedStatus,
-                                icon: Icons.toggle_on_outlined,
-                                items: kDriverStatus,
-                                labelBuilder: (e) =>
-                                    e[0].toUpperCase() + e.substring(1),
-                                onChanged: (v) =>
-                                    setState(() => _selectedStatus = v!),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    _dropdown<String>(
+                      value: _selectedStatus,
+                      icon: Icons.toggle_on_outlined,
+                      items: kDriverStatus,
+                      labelBuilder: (e) =>
+                          e[0].toUpperCase() + e.substring(1),
+                      onChanged: (v) =>
+                          setState(() => _selectedStatus = v!),
                     ),
                     const SizedBox(height: 24),
 

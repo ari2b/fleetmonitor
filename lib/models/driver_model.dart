@@ -3,8 +3,6 @@ class Driver {
   String name;
   String email;
   String phone;
-  String licenseNumber; // Nomor SIM
-  String licenseType; // SIM A, B1, B2, C
   String status; // aktif, nonaktif
   String photoUrl;
   final DateTime createdAt;
@@ -14,8 +12,6 @@ class Driver {
     required this.name,
     this.email = '',
     this.phone = '',
-    this.licenseNumber = '',
-    this.licenseType = 'SIM B1',
     this.status = 'aktif',
     this.photoUrl = '',
     DateTime? createdAt,
@@ -27,8 +23,6 @@ class Driver {
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       phone: map['phone'] ?? '',
-      licenseNumber: map['licenseNumber'] ?? '',
-      licenseType: map['licenseType'] ?? 'SIM B1',
       status: map['status'] ?? 'aktif',
       photoUrl: map['photoUrl'] ?? '',
       createdAt: map['createdAt'] != null
@@ -42,8 +36,6 @@ class Driver {
       'name': name,
       'email': email,
       'phone': phone,
-      'licenseNumber': licenseNumber,
-      'licenseType': licenseType,
       'status': status,
       'photoUrl': photoUrl,
     };

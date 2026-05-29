@@ -74,7 +74,8 @@ class AdminKelolaKendaraanView extends StatefulWidget {
       _AdminKelolaKendaraanViewState();
 }
 
-class _AdminKelolaKendaraanViewState extends State<AdminKelolaKendaraanView> {
+class _AdminKelolaKendaraanViewState
+    extends State<AdminKelolaKendaraanView> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   List<Vehicle> _vehicles = [];
   bool _isLoading = true;
@@ -93,9 +94,8 @@ class _AdminKelolaKendaraanViewState extends State<AdminKelolaKendaraanView> {
           .where('driverId', isEqualTo: widget.driver.id)
           .orderBy('createdAt', descending: false)
           .get();
-      _vehicles = snap.docs
-          .map((d) => Vehicle.fromMap(d.id, d.data()))
-          .toList();
+      _vehicles =
+          snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList();
     } catch (_) {
       _vehicles = [];
     }
@@ -112,6 +112,9 @@ class _AdminKelolaKendaraanViewState extends State<AdminKelolaKendaraanView> {
     final random = Random();
     final docRef = _db.collection('vehicles').doc();
 
+    final lat = -7.6298 + (random.nextDouble() - 0.5) * 0.02;
+    final lng = 111.5225 + (random.nextDouble() - 0.5) * 0.02;
+
     final newVehicle = Vehicle(
       id: docRef.id,
       driverName: widget.driver.name,
@@ -120,22 +123,39 @@ class _AdminKelolaKendaraanViewState extends State<AdminKelolaKendaraanView> {
       vehicleBrand: vehicleBrand,
       vehicleYear: vehicleYear,
       vehicleColor: vehicleColor,
-      lat: -7.6298 + (random.nextDouble() - 0.5) * 0.02,
-      lng: 111.5225 + (random.nextDouble() - 0.5) * 0.02,
+      lat: lat,
+      lng: lng,
     );
 
+    // Simpan ke Firestore dulu
     await docRef.set({
       ...newVehicle.toMap(),
       'driverId': widget.driver.id,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // Tambahkan ke FleetProvider agar tampil di peta
-    widget.provider.vehicles.add(newVehicle);
-    widget.provider.notifyListeners();
+    // ── FIX BUG: Sync FleetProvider dari Firestore ──────────
+    // Daripada langsung push ke provider (yang bisa duplicate),
+    // sync ulang seluruh daftar kendaraan dari Firestore
+    await _syncProviderFromFirestore();
 
+    // Tambahkan ke list lokal
     _vehicles.add(newVehicle);
     if (mounted) setState(() {});
+  }
+
+  /// Sync FleetProvider dengan data terbaru dari Firestore
+  Future<void> _syncProviderFromFirestore() async {
+    try {
+      final snap = await _db.collection('vehicles').get();
+      final firestoreVehicles =
+          snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList();
+
+      // Bersihkan kendaraan lama di provider & isi ulang dari Firestore
+      widget.provider.vehicles.clear();
+      widget.provider.vehicles.addAll(firestoreVehicles);
+      widget.provider.notifyListeners();
+    } catch (_) {}
   }
 
   Future<void> _updateVehicle(Vehicle v) async {
@@ -242,7 +262,7 @@ class _AdminKelolaKendaraanViewState extends State<AdminKelolaKendaraanView> {
                   fontSize: 15),
             ),
             Text(
-              widget.driver.licenseType,
+              'Status: ${widget.driver.status == 'aktif' ? 'Aktif' : 'Non-Aktif'}',
               style: const TextStyle(color: Colors.white70, fontSize: 11),
             ),
           ],
@@ -349,18 +369,11 @@ class _DriverInfoBanner extends StatelessWidget {
                   Text(driver.phone,
                       style:
                           TextStyle(color: Colors.grey[500], fontSize: 12)),
-                Row(
-                  children: [
-                    _Chip(
-                        label: driver.licenseType, color: Colors.indigo),
-                    const SizedBox(width: 6),
-                    _Chip(
-                      label: driver.status == 'aktif' ? 'AKTIF' : 'NON-AKTIF',
-                      color: driver.status == 'aktif'
-                          ? Colors.green
-                          : Colors.grey,
-                    ),
-                  ],
+                _StatusChip(
+                  label: driver.status == 'aktif' ? 'AKTIF' : 'NON-AKTIF',
+                  color: driver.status == 'aktif'
+                      ? Colors.green
+                      : Colors.grey,
                 ),
               ],
             ),
@@ -371,10 +384,10 @@ class _DriverInfoBanner extends StatelessWidget {
   }
 }
 
-class _Chip extends StatelessWidget {
+class _StatusChip extends StatelessWidget {
   final String label;
   final MaterialColor color;
-  const _Chip({required this.label, required this.color});
+  const _StatusChip({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -569,7 +582,8 @@ class _EmptyVehicle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.directions_car_outlined, size: 64, color: Colors.grey[300]),
+          Icon(Icons.directions_car_outlined,
+              size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             'Belum ada kendaraan untuk driver ini.\nTambahkan kendaraan di atas.',
