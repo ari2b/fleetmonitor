@@ -5,7 +5,8 @@ import '../../providers/fleet_provider.dart';
 class RegisterScreen extends StatefulWidget {
   final String role;
   final FleetProvider provider;
-  const RegisterScreen({super.key, required this.role, required this.provider});
+  const RegisterScreen(
+      {super.key, required this.role, required this.provider});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -31,8 +32,10 @@ class _RegisterScreenState extends State<RegisterScreen>
   late Animation<Offset> _slide;
 
   bool get isAdmin => widget.role == 'admin';
-  Color get accent => isAdmin ? Colors.indigo[600]! : Colors.teal[600]!;
-  Color get accentLight => isAdmin ? Colors.indigo[50]! : Colors.teal[50]!;
+  Color get accent =>
+      isAdmin ? Colors.indigo[600]! : Colors.teal[600]!;
+  Color get accentLight =>
+      isAdmin ? Colors.indigo[50]! : Colors.teal[50]!;
 
   @override
   void initState() {
@@ -58,10 +61,48 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
+  // ── Tampilkan SnackBar ─────────────────────────────────
+  void _showSnackBar({required String message, required bool success}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              success
+                  ? Icons.check_circle_rounded
+                  : Icons.error_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor:
+            success ? Colors.green[600] : Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        duration: Duration(seconds: success ? 3 : 3),
+      ),
+    );
+  }
+
   // ── Registrasi Email/Password ─────────────────────────
   Future<void> _doRegister() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMsg = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMsg = null;
+    });
 
     final result = await AuthService.register(
       email: _emailCtrl.text,
@@ -75,25 +116,34 @@ class _RegisterScreenState extends State<RegisterScreen>
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
+      _showSnackBar(
+        message:
+            'Akun berhasil terdaftar! Silakan login untuk melanjutkan.',
+        success: true,
+      );
       _showSuccessDialog(isGoogle: false);
     } else {
-      setState(() => _errorMsg = result['message']);
+      final msg =
+          result['message'] as String? ?? 'Registrasi gagal.';
+      setState(() => _errorMsg = msg);
+      _showSnackBar(message: msg, success: false);
     }
   }
 
   // ── Registrasi Google ─────────────────────────────────
   Future<void> _doGoogleRegister() async {
-    // Driver perlu plat nomor dulu sebelum Google Sign-In
     if (!isAdmin) {
       _showGoogleDriverPlateDialog();
       return;
     }
-    // Admin langsung proses
     await _processGoogleRegister(plateNumber: null);
   }
 
   Future<void> _processGoogleRegister({String? plateNumber}) async {
-    setState(() { _isGoogleLoading = true; _errorMsg = null; });
+    setState(() {
+      _isGoogleLoading = true;
+      _errorMsg = null;
+    });
 
     final result = await AuthService.registerWithGoogle(
       role: widget.role,
@@ -104,11 +154,24 @@ class _RegisterScreenState extends State<RegisterScreen>
     setState(() => _isGoogleLoading = false);
 
     if (result['success'] == true) {
+      _showSnackBar(
+        message:
+            'Akun berhasil terdaftar via Google! Silakan login.',
+        success: true,
+      );
       _showSuccessDialog(isGoogle: true);
     } else if (result['alreadyRegistered'] == true) {
+      _showSnackBar(
+        message:
+            'Akun Google ini sudah terdaftar. Gunakan tombol Login.',
+        success: false,
+      );
       _showAlreadyRegisteredDialog();
     } else {
-      setState(() => _errorMsg = result['message']);
+      final msg =
+          result['message'] as String? ?? 'Registrasi Google gagal.';
+      setState(() => _errorMsg = msg);
+      _showSnackBar(message: msg, success: false);
     }
   }
 
@@ -123,7 +186,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24)),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Form(
@@ -134,7 +198,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                        color: Colors.teal[50], shape: BoxShape.circle),
+                        color: Colors.teal[50],
+                        shape: BoxShape.circle),
                     child: Icon(Icons.directions_car_rounded,
                         color: Colors.teal[600], size: 32),
                   ),
@@ -149,7 +214,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                     'Masukkan plat nomor kendaraan\nsebelum melanjutkan dengan Google.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 13, color: Colors.grey[500], height: 1.4),
+                        fontSize: 13,
+                        color: Colors.grey[500],
+                        height: 1.4),
                   ),
                   const SizedBox(height: 20),
                   TextFormField(
@@ -163,10 +230,12 @@ class _RegisterScreenState extends State<RegisterScreen>
                       fillColor: Colors.grey[50],
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!)),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
                       enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey[200]!)),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
                       focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(
@@ -188,11 +257,14 @@ class _RegisterScreenState extends State<RegisterScreen>
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size(0, 46),
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            side: BorderSide(color: Colors.grey[300]!),
+                                borderRadius:
+                                    BorderRadius.circular(12)),
+                            side: BorderSide(
+                                color: Colors.grey[300]!),
                           ),
                           child: Text('Batal',
-                              style: TextStyle(color: Colors.grey[600])),
+                              style:
+                                  TextStyle(color: Colors.grey[600])),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -201,7 +273,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                           onPressed: loading
                               ? null
                               : () async {
-                                  if (!formKey.currentState!.validate()) return;
+                                  if (!formKey.currentState!
+                                      .validate()) return;
                                   setDlg(() => loading = true);
                                   Navigator.pop(ctx);
                                   await _processGoogleRegister(
@@ -211,18 +284,22 @@ class _RegisterScreenState extends State<RegisterScreen>
                             minimumSize: const Size(0, 46),
                             backgroundColor: Colors.teal[600],
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
+                                borderRadius:
+                                    BorderRadius.circular(12)),
                             elevation: 0,
                           ),
                           child: loading
                               ? const SizedBox(
-                                  width: 18, height: 18,
+                                  width: 18,
+                                  height: 18,
                                   child: CircularProgressIndicator(
-                                      color: Colors.white, strokeWidth: 2))
+                                      color: Colors.white,
+                                      strokeWidth: 2))
                               : const Text('Lanjutkan',
                                   style: TextStyle(
                                       color: Colors.white,
-                                      fontWeight: FontWeight.bold)),
+                                      fontWeight:
+                                          FontWeight.bold)),
                         ),
                       ),
                     ],
@@ -242,7 +319,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       context: context,
       barrierDismissible: false,
       builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28)),
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
@@ -266,7 +344,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                 'Akun ${isAdmin ? 'Admin' : 'Driver'} Anda telah dibuat${isGoogle ? ' via Google' : ''}.\nSilakan login untuk melanjutkan.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                    color: Colors.grey[500], fontSize: 14, height: 1.5),
+                    color: Colors.grey[500],
+                    fontSize: 14,
+                    height: 1.5),
               ),
               const SizedBox(height: 28),
               SizedBox(
@@ -275,7 +355,6 @@ class _RegisterScreenState extends State<RegisterScreen>
                 child: ElevatedButton(
                   onPressed: () async {
                     Navigator.pop(ctx);
-                    // signOut setelah dialog ditutup
                     await AuthService.logout();
                     if (context.mounted) Navigator.pop(context);
                   },
@@ -304,10 +383,12 @@ class _RegisterScreenState extends State<RegisterScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.orange[600]),
+            Icon(Icons.warning_amber_rounded,
+                color: Colors.orange[600]),
             const SizedBox(width: 8),
             const Text('Sudah Terdaftar'),
           ],
@@ -320,7 +401,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.pop(context); // kembali ke login
+              Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: accent,
@@ -330,7 +411,8 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
             child: const Text('Ke Halaman Login',
                 style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -350,10 +432,12 @@ class _RegisterScreenState extends State<RegisterScreen>
               child: SlideTransition(
                 position: _slide,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                  padding:
+                      const EdgeInsets.fromLTRB(20, 24, 20, 40),
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 440),
+                      constraints:
+                          const BoxConstraints(maxWidth: 440),
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -370,7 +454,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                         child: Form(
                           key: _formKey,
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
                             children: [
                               // Badge role
                               Container(
@@ -378,16 +463,20 @@ class _RegisterScreenState extends State<RegisterScreen>
                                     horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
                                   color: accentLight,
-                                  borderRadius: BorderRadius.circular(20),
+                                  borderRadius:
+                                      BorderRadius.circular(20),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
                                       isAdmin
-                                          ? Icons.admin_panel_settings_rounded
-                                          : Icons.local_shipping_rounded,
-                                      color: accent, size: 14,
+                                          ? Icons
+                                              .admin_panel_settings_rounded
+                                          : Icons
+                                              .local_shipping_rounded,
+                                      color: accent,
+                                      size: 14,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
@@ -395,14 +484,15 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       style: TextStyle(
                                           color: accent,
                                           fontSize: 12,
-                                          fontWeight: FontWeight.bold),
+                                          fontWeight:
+                                              FontWeight.bold),
                                     ),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 20),
 
-                              // ── Registrasi Google (di atas form) ──
+                              // ── Registrasi Google ──────────────
                               _GoogleRegisterButton(
                                 isLoading: _isGoogleLoading,
                                 onTap: _doGoogleRegister,
@@ -413,14 +503,22 @@ class _RegisterScreenState extends State<RegisterScreen>
                               // Divider
                               Row(
                                 children: [
-                                  Expanded(child: Divider(color: Colors.grey[200])),
+                                  Expanded(
+                                      child: Divider(
+                                          color: Colors.grey[200])),
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                                    child: Text('atau daftar dengan email',
+                                    padding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 10),
+                                    child: Text(
+                                        'atau daftar dengan email',
                                         style: TextStyle(
-                                            color: Colors.grey[400], fontSize: 11)),
+                                            color: Colors.grey[400],
+                                            fontSize: 11)),
                                   ),
-                                  Expanded(child: Divider(color: Colors.grey[200])),
+                                  Expanded(
+                                      child: Divider(
+                                          color: Colors.grey[200])),
                                 ],
                               ),
                               const SizedBox(height: 20),
@@ -430,7 +528,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                               const SizedBox(height: 8),
                               _field(
                                 ctrl: _nameCtrl,
-                                hint: isAdmin ? 'Nama administrator' : 'Nama lengkap driver',
+                                hint: isAdmin
+                                    ? 'Nama administrator'
+                                    : 'Nama lengkap driver',
                                 icon: Icons.person_outline,
                                 validator: (v) =>
                                     (v == null || v.trim().isEmpty)
@@ -463,7 +563,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 ctrl: _emailCtrl,
                                 hint: 'contoh@email.com',
                                 icon: Icons.email_outlined,
-                                keyboard: TextInputType.emailAddress,
+                                keyboard:
+                                    TextInputType.emailAddress,
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty)
                                     return 'Email tidak boleh kosong';
@@ -484,8 +585,8 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 obscure: _obscurePass,
                                 suffix: _eyeBtn(
                                   visible: _obscurePass,
-                                  onTap: () => setState(
-                                      () => _obscurePass = !_obscurePass),
+                                  onTap: () => setState(() =>
+                                      _obscurePass = !_obscurePass),
                                 ),
                                 validator: (v) {
                                   if (v == null || v.isEmpty)
@@ -507,8 +608,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 obscure: _obscureConfirm,
                                 suffix: _eyeBtn(
                                   visible: _obscureConfirm,
-                                  onTap: () => setState(
-                                      () => _obscureConfirm = !_obscureConfirm),
+                                  onTap: () => setState(() =>
+                                      _obscureConfirm =
+                                          !_obscureConfirm),
                                 ),
                                 validator: (v) {
                                   if (v == null || v.isEmpty)
@@ -527,13 +629,16 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
                                     color: Colors.red[50],
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.red[200]!),
+                                    borderRadius:
+                                        BorderRadius.circular(10),
+                                    border: Border.all(
+                                        color: Colors.red[200]!),
                                   ),
                                   child: Row(
                                     children: [
                                       Icon(Icons.error_outline,
-                                          color: Colors.red[600], size: 16),
+                                          color: Colors.red[600],
+                                          size: 16),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(_errorMsg!,
@@ -553,21 +658,25 @@ class _RegisterScreenState extends State<RegisterScreen>
                                 width: double.infinity,
                                 height: 52,
                                 child: ElevatedButton(
-                                  onPressed: _isLoading ? null : _doRegister,
+                                  onPressed:
+                                      _isLoading ? null : _doRegister,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: accent,
                                     disabledBackgroundColor:
                                         accent.withOpacity(0.5),
                                     shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14)),
+                                        borderRadius:
+                                            BorderRadius.circular(14)),
                                     elevation: 0,
                                   ),
                                   child: _isLoading
                                       ? const SizedBox(
-                                          width: 20, height: 20,
-                                          child: CircularProgressIndicator(
-                                              color: Colors.white,
-                                              strokeWidth: 2.5))
+                                          width: 20,
+                                          height: 20,
+                                          child:
+                                              CircularProgressIndicator(
+                                                  color: Colors.white,
+                                                  strokeWidth: 2.5))
                                       : Row(
                                           mainAxisAlignment:
                                               MainAxisAlignment.center,
@@ -575,15 +684,20 @@ class _RegisterScreenState extends State<RegisterScreen>
                                             Icon(
                                               isAdmin
                                                   ? Icons.security
-                                                  : Icons.person_add_rounded,
-                                              color: Colors.white, size: 20,
+                                                  : Icons
+                                                      .person_add_rounded,
+                                              color: Colors.white,
+                                              size: 20,
                                             ),
                                             const SizedBox(width: 8),
-                                            const Text('Daftar Sekarang',
+                                            const Text(
+                                                'Daftar Sekarang',
                                                 style: TextStyle(
                                                     fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Colors.white)),
+                                                    fontWeight:
+                                                        FontWeight.bold,
+                                                    color:
+                                                        Colors.white)),
                                           ],
                                         ),
                                 ),
@@ -591,7 +705,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
                               const SizedBox(height: 14),
 
-                              // Link sudah punya akun
                               Center(
                                 child: GestureDetector(
                                   onTap: () => Navigator.pop(context),
@@ -599,13 +712,15 @@ class _RegisterScreenState extends State<RegisterScreen>
                                     text: TextSpan(
                                       text: 'Sudah punya akun? ',
                                       style: TextStyle(
-                                          color: Colors.grey[500], fontSize: 13),
+                                          color: Colors.grey[500],
+                                          fontSize: 13),
                                       children: [
                                         TextSpan(
                                           text: 'Masuk di sini',
                                           style: TextStyle(
                                             color: accent,
-                                            fontWeight: FontWeight.bold,
+                                            fontWeight:
+                                                FontWeight.bold,
                                           ),
                                         ),
                                       ],
@@ -666,7 +781,8 @@ class _RegisterScreenState extends State<RegisterScreen>
               ),
               Text('Fleet Monitor',
                   style: TextStyle(
-                      color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                      color: Colors.white.withOpacity(0.6),
+                      fontSize: 12)),
             ],
           ),
         ],
@@ -698,7 +814,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       textCapitalization: caps,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+        hintStyle:
+            TextStyle(color: Colors.grey[400], fontSize: 14),
         prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
         suffixIcon: suffix,
         filled: true,
@@ -714,24 +831,28 @@ class _RegisterScreenState extends State<RegisterScreen>
             borderSide: BorderSide(color: accent, width: 1.8)),
         errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red[300]!, width: 1.5)),
+            borderSide:
+                BorderSide(color: Colors.red[300]!, width: 1.5)),
         focusedErrorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red[400]!, width: 1.8)),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            borderSide:
+                BorderSide(color: Colors.red[400]!, width: 1.8)),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16, vertical: 15),
       ),
       validator: validator,
     );
   }
 
-  Widget _eyeBtn({required bool visible, required VoidCallback onTap}) =>
+  Widget _eyeBtn(
+          {required bool visible, required VoidCallback onTap}) =>
       IconButton(
         icon: Icon(
           visible
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-          color: Colors.grey[400], size: 20,
+          color: Colors.grey[400],
+          size: 20,
         ),
         onPressed: onTap,
       );
@@ -745,7 +866,9 @@ class _GoogleRegisterButton extends StatelessWidget {
   final VoidCallback onTap;
   final String role;
   const _GoogleRegisterButton(
-      {required this.isLoading, required this.onTap, required this.role});
+      {required this.isLoading,
+      required this.onTap,
+      required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -769,18 +892,20 @@ class _GoogleRegisterButton extends StatelessWidget {
         child: isLoading
             ? const Center(
                 child: SizedBox(
-                  width: 22, height: 22,
+                  width: 22,
+                  height: 22,
                   child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.grey)),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.grey)),
                 ),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F3F4),
                       borderRadius: BorderRadius.circular(4),

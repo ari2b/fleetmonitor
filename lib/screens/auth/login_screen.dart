@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../providers/fleet_provider.dart';
 import '../../services/auth_service.dart';
-import '../admin/admin_dashboard.dart';
+import '../admin/admin_home_screen.dart';
 import '../driver/driver_dashboard.dart';
 import 'register_screen.dart';
 
@@ -43,7 +43,8 @@ class AuthScreen extends StatelessWidget {
                 // ── Header biru ──────────────────────────
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 40, horizontal: 20),
                   decoration: BoxDecoration(
                     color: Colors.indigo[600],
                     borderRadius: const BorderRadius.only(
@@ -59,7 +60,8 @@ class AuthScreen extends StatelessWidget {
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(16),
                         ),
-                        child: const Icon(Icons.local_shipping, size: 48, color: Colors.white),
+                        child: const Icon(Icons.local_shipping,
+                            size: 48, color: Colors.white),
                       ),
                       const SizedBox(height: 16),
                       const Text('Fleet Monitor',
@@ -80,7 +82,8 @@ class AuthScreen extends StatelessWidget {
                   child: Column(
                     children: [
                       ElevatedButton.icon(
-                        icon: const Icon(Icons.security, color: Colors.white),
+                        icon:
+                            const Icon(Icons.security, color: Colors.white),
                         label: const Text('Masuk sebagai Admin',
                             style: TextStyle(
                                 fontSize: 16,
@@ -93,11 +96,13 @@ class AuthScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(16)),
                           elevation: 0,
                         ),
-                        onPressed: () => _showLoginSheet(context, 'admin'),
+                        onPressed: () =>
+                            _showLoginSheet(context, 'admin'),
                       ),
                       const SizedBox(height: 16),
                       OutlinedButton.icon(
-                        icon: Icon(Icons.person, color: Colors.indigo[600]),
+                        icon: Icon(Icons.person,
+                            color: Colors.indigo[600]),
                         label: Text('Masuk sebagai Driver',
                             style: TextStyle(
                                 fontSize: 16,
@@ -105,15 +110,18 @@ class AuthScreen extends StatelessWidget {
                                 color: Colors.indigo[600])),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(double.infinity, 56),
-                          side: BorderSide(color: Colors.indigo[100]!, width: 2),
+                          side: BorderSide(
+                              color: Colors.indigo[100]!, width: 2),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16)),
                         ),
-                        onPressed: () => _showLoginSheet(context, 'driver'),
+                        onPressed: () =>
+                            _showLoginSheet(context, 'driver'),
                       ),
                       const SizedBox(height: 24),
                       Text('Versi 2.0.4 • © 2024 Fleet System',
-                          style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+                          style: TextStyle(
+                              color: Colors.grey[400], fontSize: 12)),
                     ],
                   ),
                 ),
@@ -132,7 +140,8 @@ class AuthScreen extends StatelessWidget {
 class _LoginBottomSheet extends StatefulWidget {
   final String role;
   final FleetProvider provider;
-  const _LoginBottomSheet({required this.role, required this.provider});
+  const _LoginBottomSheet(
+      {required this.role, required this.provider});
 
   @override
   State<_LoginBottomSheet> createState() => _LoginBottomSheetState();
@@ -149,8 +158,10 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
   String? _errorMsg;
 
   bool get isAdmin => widget.role == 'admin';
-  Color get accent => isAdmin ? Colors.indigo[600]! : Colors.teal[600]!;
-  Color get accentLight => isAdmin ? Colors.indigo[50]! : Colors.teal[50]!;
+  Color get accent =>
+      isAdmin ? Colors.indigo[600]! : Colors.teal[600]!;
+  Color get accentLight =>
+      isAdmin ? Colors.indigo[50]! : Colors.teal[50]!;
 
   @override
   void dispose() {
@@ -159,14 +170,66 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
     super.dispose();
   }
 
+  // ── Tampilkan SnackBar ─────────────────────────────────
+  void _showSnackBar({
+    required String message,
+    required bool success,
+  }) {
+    if (!mounted) return;
+    // Gunakan rootScaffold agar SnackBar muncul di atas bottom sheet
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              success ? Icons.check_circle_rounded : Icons.error_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor:
+            success ? Colors.green[600] : Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        duration: Duration(seconds: success ? 2 : 3),
+      ),
+    );
+  }
+
   // ── Navigasi ke dashboard ─────────────────────────────
   void _goToDashboard(Map<String, dynamic> result) {
     final role = result['role'] as String;
     final data = result['data'] as Map<String, dynamic>;
+
+    // Tutup bottom sheet terlebih dahulu
     Navigator.pop(context);
+
+    // Tampilkan notifikasi login berhasil
+    _showSnackBar(
+      message: 'Login berhasil! Selamat datang.',
+      success: true,
+    );
+
     if (role == 'admin') {
-      Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (_) => AdminDashboard(provider: widget.provider)));
+      // Admin → ke halaman menu pilihan
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              AdminHomeScreen(provider: widget.provider),
+        ),
+      );
     } else {
       widget.provider.loginAsDriverFromFirebase(
         uid: result['uid'],
@@ -175,15 +238,23 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
         lat: (data['lat'] as num?)?.toDouble() ?? 0.5,
         lng: (data['lng'] as num?)?.toDouble() ?? 0.5,
       );
-      Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (_) => DriverDashboard(provider: widget.provider)));
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              DriverDashboard(provider: widget.provider),
+        ),
+      );
     }
   }
 
   // ── Login Email/Password ──────────────────────────────
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMsg = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMsg = null;
+    });
 
     final result = await AuthService.login(
       email: _emailCtrl.text,
@@ -196,22 +267,30 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
     if (result['success'] == true) {
       final role = result['role'] as String;
       if (role != widget.role) {
-        setState(() => _errorMsg =
+        final wrongRoleMsg =
             'Akun ini terdaftar sebagai ${role == 'admin' ? 'Admin' : 'Driver'}. '
-            'Silakan pilih role yang sesuai.');
+            'Silakan pilih role yang sesuai.';
+        setState(() => _errorMsg = wrongRoleMsg);
+        _showSnackBar(message: wrongRoleMsg, success: false);
         return;
       }
       _goToDashboard(result);
     } else {
-      setState(() => _errorMsg = result['message']);
+      final msg = result['message'] as String? ?? 'Login gagal.';
+      setState(() => _errorMsg = msg);
+      _showSnackBar(message: msg, success: false);
     }
   }
 
   // ── Login Google ──────────────────────────────────────
   Future<void> _handleGoogleLogin() async {
-    setState(() { _isGoogleLoading = true; _errorMsg = null; });
+    setState(() {
+      _isGoogleLoading = true;
+      _errorMsg = null;
+    });
 
-    final result = await AuthService.loginWithGoogle(role: widget.role);
+    final result =
+        await AuthService.loginWithGoogle(role: widget.role);
 
     if (!mounted) return;
     setState(() => _isGoogleLoading = false);
@@ -219,11 +298,17 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
     if (result['success'] == true) {
       _goToDashboard(result);
     } else if (result['notRegistered'] == true) {
-      // Belum daftar → arahkan ke halaman registrasi
       setState(() => _errorMsg = null);
+      _showSnackBar(
+        message:
+            'Akun Google ini belum terdaftar. Silakan daftar dulu.',
+        success: false,
+      );
       _showNotRegisteredDialog();
     } else {
-      setState(() => _errorMsg = result['message']);
+      final msg = result['message'] as String? ?? 'Login Google gagal.';
+      setState(() => _errorMsg = msg);
+      _showSnackBar(message: msg, success: false);
     }
   }
 
@@ -231,7 +316,8 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             Icon(Icons.info_outline, color: Colors.orange[600]),
@@ -248,19 +334,20 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Tutup', style: TextStyle(color: Colors.grey[500])),
+            child: Text('Tutup',
+                style: TextStyle(color: Colors.grey[500])),
           ),
-          // Tombol daftar hanya muncul untuk Driver
           if (!isAdmin)
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                Navigator.pop(context); // tutup bottom sheet
+                Navigator.pop(context);
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => RegisterScreen(
-                        role: widget.role, provider: widget.provider),
+                        role: widget.role,
+                        provider: widget.provider),
                   ),
                 );
               },
@@ -271,7 +358,9 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                 elevation: 0,
               ),
               child: const Text('Daftar Sekarang',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold)),
             ),
         ],
       ),
@@ -298,7 +387,8 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
             // Handle bar
             const SizedBox(height: 12),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
                   color: Colors.grey[300],
                   borderRadius: BorderRadius.circular(2)),
@@ -317,20 +407,24 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                     isAdmin
                         ? Icons.admin_panel_settings_rounded
                         : Icons.local_shipping_rounded,
-                    color: accent, size: 22,
+                    color: accent,
+                    size: 22,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Login ${isAdmin ? 'Admin' : 'Driver'}',
-                        style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B))),
+                    Text(
+                      'Login ${isAdmin ? 'Admin' : 'Driver'}',
+                      style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1E293B)),
+                    ),
                     Text('Masukkan email & password Anda',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey[500])),
                   ],
                 ),
                 const Spacer(),
@@ -355,7 +449,8 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                     validator: (v) {
                       if (v == null || v.trim().isEmpty)
                         return 'Email tidak boleh kosong';
-                      if (!v.contains('@')) return 'Format email tidak valid';
+                      if (!v.contains('@'))
+                        return 'Format email tidak valid';
                       return null;
                     },
                   ),
@@ -370,9 +465,11 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                         _obscure
                             ? Icons.visibility_off_outlined
                             : Icons.visibility_outlined,
-                        color: Colors.grey[400], size: 20,
+                        color: Colors.grey[400],
+                        size: 20,
                       ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
+                      onPressed: () =>
+                          setState(() => _obscure = !_obscure),
                     ),
                     validator: (v) {
                       if (v == null || v.isEmpty)
@@ -400,7 +497,8 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                           Expanded(
                             child: Text(_errorMsg!,
                                 style: TextStyle(
-                                    color: Colors.red[700], fontSize: 12)),
+                                    color: Colors.red[700],
+                                    fontSize: 12)),
                           ),
                         ],
                       ),
@@ -417,16 +515,19 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                       onPressed: _isLoading ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: accent,
-                        disabledBackgroundColor: accent.withOpacity(0.5),
+                        disabledBackgroundColor:
+                            accent.withOpacity(0.5),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                         elevation: 0,
                       ),
                       child: _isLoading
                           ? const SizedBox(
-                              width: 20, height: 20,
+                              width: 20,
+                              height: 20,
                               child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2.5))
+                                  color: Colors.white,
+                                  strokeWidth: 2.5))
                           : const Text('Masuk',
                               style: TextStyle(
                                   fontSize: 16,
@@ -437,7 +538,7 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
 
                   const SizedBox(height: 14),
 
-                  // ── Tombol Login Google (di bawah Login) ─
+                  // ── Tombol Login Google ────────────────
                   _GoogleButton(
                     isLoading: _isGoogleLoading,
                     onTap: _handleGoogleLogin,
@@ -446,28 +547,31 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                   // Tombol Daftar hanya untuk Driver
                   if (!isAdmin) ...[
                     const SizedBox(height: 16),
-
                     Row(
                       children: [
-                        Expanded(child: Divider(color: Colors.grey[200])),
+                        Expanded(
+                            child: Divider(color: Colors.grey[200])),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10),
                           child: Text('belum punya akun?',
                               style: TextStyle(
-                                  color: Colors.grey[400], fontSize: 12)),
+                                  color: Colors.grey[400],
+                                  fontSize: 12)),
                         ),
-                        Expanded(child: Divider(color: Colors.grey[200])),
+                        Expanded(
+                            child: Divider(color: Colors.grey[200])),
                       ],
                     ),
                     const SizedBox(height: 14),
-
-                    // ── Tombol Daftar Driver ───────────────
                     SizedBox(
                       width: double.infinity,
                       height: 52,
                       child: OutlinedButton.icon(
-                        icon: Icon(Icons.person_add_alt_1_outlined,
-                            color: accent, size: 20),
+                        icon: Icon(
+                            Icons.person_add_alt_1_outlined,
+                            color: accent,
+                            size: 20),
                         label: Text(
                           'Daftar Akun Driver Baru',
                           style: TextStyle(
@@ -477,9 +581,11 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
                         ),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                              color: accent.withOpacity(0.4), width: 1.5),
+                              color: accent.withOpacity(0.4),
+                              width: 1.5),
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
+                              borderRadius:
+                                  BorderRadius.circular(14)),
                         ),
                         onPressed: () {
                           Navigator.pop(context);
@@ -519,7 +625,8 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
       obscureText: obscure,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+        hintStyle:
+            TextStyle(color: Colors.grey[400], fontSize: 14),
         prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
         suffixIcon: suffix,
         filled: true,
@@ -535,12 +642,14 @@ class _LoginBottomSheetState extends State<_LoginBottomSheet> {
             borderSide: BorderSide(color: accent, width: 1.8)),
         errorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red[300]!, width: 1.5)),
+            borderSide:
+                BorderSide(color: Colors.red[300]!, width: 1.5)),
         focusedErrorBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.red[400]!, width: 1.8)),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            borderSide:
+                BorderSide(color: Colors.red[400]!, width: 1.8)),
+        contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16, vertical: 15),
       ),
       validator: validator,
     );
@@ -577,19 +686,20 @@ class _GoogleButton extends StatelessWidget {
         child: isLoading
             ? const Center(
                 child: SizedBox(
-                  width: 22, height: 22,
+                  width: 22,
+                  height: 22,
                   child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.grey)),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.grey)),
                 ),
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Google G logo
                   Container(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF1F3F4),
                       borderRadius: BorderRadius.circular(4),

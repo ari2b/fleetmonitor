@@ -8,7 +8,12 @@ import 'views/admin_kelola_view.dart';
 
 class AdminDashboard extends StatefulWidget {
   final FleetProvider provider;
-  const AdminDashboard({super.key, required this.provider});
+  final int initialTabIndex; // TAMBAHAN
+  const AdminDashboard({
+    super.key,
+    required this.provider,
+    this.initialTabIndex = 0, // default tab 0
+  });
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();
@@ -21,7 +26,11 @@ class _AdminDashboardState extends State<AdminDashboard>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(
+  length: 3,
+  vsync: this,
+  initialIndex: widget.initialTabIndex, // TAMBAHAN
+);
   }
 
   @override
