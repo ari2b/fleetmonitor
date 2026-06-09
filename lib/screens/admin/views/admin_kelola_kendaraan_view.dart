@@ -77,29 +77,17 @@ class AdminKelolaKendaraanView extends StatefulWidget {
 class _AdminKelolaKendaraanViewState
     extends State<AdminKelolaKendaraanView> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  List<Vehicle> _vehicles = [];
-  bool _isLoading = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadVehicles();
-  }
-
-  Future<void> _loadVehicles() async {
-    setState(() => _isLoading = true);
-    try {
-      final snap = await _db
-          .collection('vehicles')
-          .where('driverId', isEqualTo: widget.driver.id)
-          .orderBy('createdAt', descending: false)
-          .get();
-      _vehicles =
-          snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList();
-    } catch (_) {
-      _vehicles = [];
-    }
-    if (mounted) setState(() => _isLoading = false);
+  /// Stream real-time kendaraan milik driver ini dari Firestore.
+  Stream<List<Vehicle>> get _vehiclesStream {
+    // Coba dengan orderBy dulu; fallback ditangani di StreamBuilder
+    return _db
+        .collection('vehicles')
+        .where('driverId', isEqualTo: widget.driver.id)
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .map((snap) =>
+            snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList());
   }
 
   Future<void> _addVehicle({
@@ -115,73 +103,38 @@ class _AdminKelolaKendaraanViewState
     final lat = -7.6298 + (random.nextDouble() - 0.5) * 0.02;
     final lng = 111.5225 + (random.nextDouble() - 0.5) * 0.02;
 
-    final newVehicle = Vehicle(
-      id: docRef.id,
-      driverName: widget.driver.name,
-      plateNumber: plateNumber,
-      vehicleType: vehicleType,
-      vehicleBrand: vehicleBrand,
-      vehicleYear: vehicleYear,
-      vehicleColor: vehicleColor,
-      lat: lat,
-      lng: lng,
-    );
-
-    // Simpan ke Firestore dulu
     await docRef.set({
-      ...newVehicle.toMap(),
+      'driverName': widget.driver.name,
+      'plateNumber': plateNumber,
+      'vehicleType': vehicleType,
+      'vehicleBrand': vehicleBrand,
+      'vehicleYear': vehicleYear,
+      'vehicleColor': vehicleColor,
+      'lat': lat,
+      'lng': lng,
+      'heading': 0.0,
+      'status': 'idle',
       'driverId': widget.driver.id,
       'createdAt': FieldValue.serverTimestamp(),
     });
-
-    // ── FIX BUG: Sync FleetProvider dari Firestore ──────────
-    // Daripada langsung push ke provider (yang bisa duplicate),
-    // sync ulang seluruh daftar kendaraan dari Firestore
-    await _syncProviderFromFirestore();
-
-    // Tambahkan ke list lokal
-    _vehicles.add(newVehicle);
-    if (mounted) setState(() {});
-  }
-
-  /// Sync FleetProvider dengan data terbaru dari Firestore
-  Future<void> _syncProviderFromFirestore() async {
-    try {
-      final snap = await _db.collection('vehicles').get();
-      final firestoreVehicles =
-          snap.docs.map((d) => Vehicle.fromMap(d.id, d.data())).toList();
-
-      // Bersihkan kendaraan lama di provider & isi ulang dari Firestore
-      widget.provider.vehicles.clear();
-      widget.provider.vehicles.addAll(firestoreVehicles);
-      widget.provider.notifyListeners();
-    } catch (_) {}
+    // Stream otomatis refresh — tidak perlu push manual ke provider
   }
 
   Future<void> _updateVehicle(Vehicle v) async {
     await _db.collection('vehicles').doc(v.id).update({
-      ...v.toMap(),
+      'plateNumber': v.plateNumber,
+      'vehicleType': v.vehicleType,
+      'vehicleBrand': v.vehicleBrand,
+      'vehicleYear': v.vehicleYear,
+      'vehicleColor': v.vehicleColor,
+      'driverName': widget.driver.name,
       'driverId': widget.driver.id,
     });
-    await widget.provider.updateVehicleData(
-      id: v.id,
-      driverName: v.driverName,
-      plateNumber: v.plateNumber,
-      vehicleType: v.vehicleType,
-      vehicleBrand: v.vehicleBrand,
-      vehicleYear: v.vehicleYear,
-      vehicleColor: v.vehicleColor,
-    );
-    final idx = _vehicles.indexWhere((x) => x.id == v.id);
-    if (idx != -1) _vehicles[idx] = v;
-    if (mounted) setState(() {});
   }
 
   Future<void> _deleteVehicle(String id) async {
-    await widget.provider.deleteVehicle(id);
-    await _db.collection('vehicles').doc(id).delete().catchError((_) {});
-    _vehicles.removeWhere((v) => v.id == id);
-    if (mounted) setState(() {});
+    await _db.collection('vehicles').doc(id).delete();
+    widget.provider.deleteVehicle(id);
   }
 
   void _openVehicleForm({Vehicle? vehicle}) {
@@ -268,50 +221,168 @@ class _AdminKelolaKendaraanViewState
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadVehicles,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // ── Info driver ringkas ───────────────────
-                  _DriverInfoBanner(driver: widget.driver),
-                  const SizedBox(height: 16),
+      body: StreamBuilder<List<Vehicle>>(
+        stream: _vehiclesStream,
+        builder: (context, snapshot) {
+          // ── Loading ──────────────────────────────────────
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                  // ── Tombol Tambah Kendaraan ───────────────
-                  OutlinedButton.icon(
-                    onPressed: () => _openVehicleForm(),
-                    icon: Icon(Icons.add_circle_outline,
-                        color: Colors.teal[600]),
-                    label: Text(
-                      'Tambah Kendaraan',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.teal[600]),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 56),
-                      side: BorderSide(color: Colors.teal[200]!, width: 1.5),
-                      backgroundColor: Colors.teal[50],
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+          // ── Error (mis. index belum dibuat) ─────────────
+          if (snapshot.hasError) {
+            final err = snapshot.error.toString();
+            if (err.contains('index') || err.contains('FAILED_PRECONDITION')) {
+              return _FallbackVehicleList(
+                driverId: widget.driver.id,
+                driver: widget.driver,
+                onAdd: () => _openVehicleForm(),
+                onEdit: (v) => _openVehicleForm(vehicle: v),
+                onDelete: _confirmDeleteVehicle,
+              );
+            }
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red[400], size: 48),
+                  const SizedBox(height: 12),
+                  Text('Gagal memuat kendaraan',
+                      style: TextStyle(color: Colors.grey[600])),
+                ],
+              ),
+            );
+          }
+
+          final vehicles = snapshot.data ?? [];
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _DriverInfoBanner(driver: widget.driver),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () => _openVehicleForm(),
+                icon: Icon(Icons.add_circle_outline, color: Colors.teal[600]),
+                label: Text(
+                  'Tambah Kendaraan',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.teal[600]),
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                  side: BorderSide(color: Colors.teal[200]!, width: 1.5),
+                  backgroundColor: Colors.teal[50],
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (vehicles.isEmpty)
+                _EmptyVehicle()
+              else
+                ...vehicles.map((v) => _VehicleCard(
+                      vehicle: v,
+                      onEdit: () => _openVehicleForm(vehicle: v),
+                      onDelete: () => _confirmDeleteVehicle(v),
+                    )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─── Fallback tanpa orderBy ───────────────────────────────────────────────────
+
+class _FallbackVehicleList extends StatelessWidget {
+  final String driverId;
+  final Driver driver;
+  final VoidCallback onAdd;
+  final void Function(Vehicle) onEdit;
+  final void Function(Vehicle) onDelete;
+
+  const _FallbackVehicleList({
+    required this.driverId,
+    required this.driver,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('vehicles')
+          .where('driverId', isEqualTo: driverId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        final vehicles = docs
+            .map((d) =>
+                Vehicle.fromMap(d.id, d.data() as Map<String, dynamic>))
+            .toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.amber[700], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Buat Firestore composite index untuk koleksi "vehicles": '
+                      'field driverId (ASC) + createdAt (ASC) agar tampilan optimal.',
+                      style:
+                          TextStyle(fontSize: 11, color: Colors.amber[900]),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // ── Daftar Kendaraan ──────────────────────
-                  if (_vehicles.isEmpty)
-                    _EmptyVehicle()
-                  else
-                    ..._vehicles.map((v) => _VehicleCard(
-                          vehicle: v,
-                          onEdit: () => _openVehicleForm(vehicle: v),
-                          onDelete: () => _confirmDeleteVehicle(v),
-                        )),
                 ],
               ),
             ),
+            _DriverInfoBanner(driver: driver),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onAdd,
+              icon: Icon(Icons.add_circle_outline, color: Colors.teal[600]),
+              label: Text('Tambah Kendaraan',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.teal[600])),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 56),
+                side: BorderSide(color: Colors.teal[200]!, width: 1.5),
+                backgroundColor: Colors.teal[50],
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (vehicles.isEmpty)
+              _EmptyVehicle()
+            else
+              ...vehicles.map((v) => _VehicleCard(
+                    vehicle: v,
+                    onEdit: () => onEdit(v),
+                    onDelete: () => onDelete(v),
+                  )),
+          ],
+        );
+      },
     );
   }
 }
@@ -371,9 +442,7 @@ class _DriverInfoBanner extends StatelessWidget {
                           TextStyle(color: Colors.grey[500], fontSize: 12)),
                 _StatusChip(
                   label: driver.status == 'aktif' ? 'AKTIF' : 'NON-AKTIF',
-                  color: driver.status == 'aktif'
-                      ? Colors.green
-                      : Colors.grey,
+                  color: driver.status == 'aktif' ? Colors.green : Colors.grey,
                 ),
               ],
             ),
@@ -465,8 +534,7 @@ class _VehicleCard extends StatelessWidget {
                     ),
                     Text(
                       '${vehicle.vehicleBrand} ${vehicle.vehicleYear}',
-                      style:
-                          TextStyle(color: Colors.grey[600], fontSize: 12),
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ],
                 ),
@@ -520,8 +588,7 @@ class _InfoChip extends StatelessWidget {
   final String label;
   final MaterialColor color;
 
-  const _InfoChip(
-      {required this.icon, required this.label, required this.color});
+  const _InfoChip({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -553,8 +620,7 @@ class _ActionBtn extends StatelessWidget {
   final MaterialColor color;
   final VoidCallback onTap;
 
-  const _ActionBtn(
-      {required this.icon, required this.color, required this.onTap});
+  const _ActionBtn({required this.icon, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -582,14 +648,12 @@ class _EmptyVehicle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.directions_car_outlined,
-              size: 64, color: Colors.grey[300]),
+          Icon(Icons.directions_car_outlined, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             'Belum ada kendaraan untuk driver ini.\nTambahkan kendaraan di atas.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Colors.grey[400], fontSize: 14, height: 1.5),
+            style: TextStyle(color: Colors.grey[400], fontSize: 14, height: 1.5),
           ),
         ],
       ),
@@ -682,7 +746,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
@@ -724,7 +787,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
               ],
             ),
           ),
-
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -739,14 +801,12 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                       controller: _plateCtrl,
                       textCapitalization: TextCapitalization.characters,
                       decoration: _inputDeco(
-                          'Contoh: AE 1234 CD',
-                          Icons.credit_card_outlined),
+                          'Contoh: AE 1234 CD', Icons.credit_card_outlined),
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Plat nomor tidak boleh kosong'
                           : null,
                     ),
                     const SizedBox(height: 14),
-
                     _label('JENIS KENDARAAN'),
                     const SizedBox(height: 8),
                     _dropdown<String>(
@@ -757,7 +817,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                       onChanged: (v) => setState(() => _selectedType = v!),
                     ),
                     const SizedBox(height: 14),
-
                     _label('MEREK KENDARAAN'),
                     const SizedBox(height: 8),
                     _dropdown<String>(
@@ -768,7 +827,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                       onChanged: (v) => setState(() => _selectedBrand = v!),
                     ),
                     const SizedBox(height: 14),
-
                     Row(
                       children: [
                         Expanded(
@@ -809,7 +867,6 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                       ],
                     ),
                     const SizedBox(height: 24),
-
                     Row(
                       children: [
                         Expanded(
@@ -842,8 +899,7 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5))
+                                        color: Colors.white, strokeWidth: 2.5))
                                 : const Text('Simpan',
                                     style: TextStyle(
                                         color: Colors.white,
@@ -929,8 +985,8 @@ class _VehicleFormDialogState extends State<_VehicleFormDialog> {
       items: items
           .map((e) => DropdownMenuItem<T>(
                 value: e,
-                child: Text(labelBuilder(e),
-                    style: const TextStyle(fontSize: 14)),
+                child:
+                    Text(labelBuilder(e), style: const TextStyle(fontSize: 14)),
               ))
           .toList(),
       dropdownColor: Colors.white,

@@ -56,30 +56,16 @@ class AdminJadwalView extends StatefulWidget {
 
 class _AdminJadwalViewState extends State<AdminJadwalView> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  List<Schedule> _schedules = [];
-  bool _isLoading = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadSchedules();
-  }
-
-  Future<void> _loadSchedules() async {
-    setState(() => _isLoading = true);
-    try {
-      final snap = await _db
-          .collection('schedules')
-          .where('driverId', isEqualTo: widget.driver.id)
-          .orderBy('scheduleDate', descending: false)
-          .get();
-      _schedules =
-          snap.docs.map((d) => Schedule.fromMap(d.id, d.data())).toList();
-    } catch (_) {
-      _schedules = [];
-    }
-    if (mounted) setState(() => _isLoading = false);
-  }
+  /// Stream real-time jadwal dari Firestore.
+  /// Tidak perlu index gabungan karena hanya filter driverId + sort scheduleDate.
+  Stream<List<Schedule>> get _schedulesStream => _db
+      .collection('schedules')
+      .where('driverId', isEqualTo: widget.driver.id)
+      .orderBy('scheduleDate', descending: false)
+      .snapshots()
+      .map((snap) =>
+          snap.docs.map((d) => Schedule.fromMap(d.id, d.data())).toList());
 
   Future<void> _addSchedule(Schedule s) async {
     final docRef = _db.collection('schedules').doc();
@@ -87,22 +73,14 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
       ...s.toMap(),
       'createdAt': FieldValue.serverTimestamp(),
     });
-    final newSchedule = Schedule.fromMap(docRef.id, s.toMap());
-    _schedules.add(newSchedule);
-    if (mounted) setState(() {});
   }
 
   Future<void> _updateSchedule(Schedule s) async {
     await _db.collection('schedules').doc(s.id).update(s.toMap());
-    final idx = _schedules.indexWhere((x) => x.id == s.id);
-    if (idx != -1) _schedules[idx] = s;
-    if (mounted) setState(() {});
   }
 
   Future<void> _deleteSchedule(String id) async {
     await _db.collection('schedules').doc(id).delete();
-    _schedules.removeWhere((s) => s.id == id);
-    if (mounted) setState(() {});
   }
 
   void _openForm({Schedule? schedule}) {
@@ -183,50 +161,179 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadSchedules,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  // Info driver
-                  _DriverBanner(driver: widget.driver),
-                  const SizedBox(height: 16),
+      body: StreamBuilder<List<Schedule>>(
+        stream: _schedulesStream,
+        builder: (context, snapshot) {
+          // ── Loading ──────────────────────────────────────
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-                  // Tombol tambah jadwal
-                  OutlinedButton.icon(
-                    onPressed: () => _openForm(),
-                    icon: Icon(Icons.add_circle_outline,
-                        color: Colors.orange[700]),
-                    label: Text(
-                      'Tambah Jadwal Baru',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange[700]),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 56),
-                      side: BorderSide(color: Colors.orange[200]!, width: 1.5),
-                      backgroundColor: Colors.orange[50],
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+          // ── Error (mis. index Firestore belum dibuat) ────
+          if (snapshot.hasError) {
+            final err = snapshot.error.toString();
+            // Cek apakah error index — fallback query tanpa orderBy
+            if (err.contains('index') || err.contains('FAILED_PRECONDITION')) {
+              return _FallbackScheduleList(
+                driverId: widget.driver.id,
+                driver: widget.driver,
+                onAdd: () => _openForm(),
+                onEdit: (s) => _openForm(schedule: s),
+                onDelete: _confirmDelete,
+              );
+            }
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red[400], size: 48),
+                  const SizedBox(height: 12),
+                  Text('Gagal memuat jadwal',
+                      style: TextStyle(color: Colors.grey[600])),
+                  const SizedBox(height: 4),
+                  Text(err,
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(color: Colors.grey[400], fontSize: 11)),
+                ],
+              ),
+            );
+          }
+
+          final schedules = snapshot.data ?? [];
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Info driver
+              _DriverBanner(driver: widget.driver),
+              const SizedBox(height: 16),
+
+              // Tombol tambah jadwal
+              OutlinedButton.icon(
+                onPressed: () => _openForm(),
+                icon: Icon(Icons.add_circle_outline, color: Colors.orange[700]),
+                label: Text(
+                  'Tambah Jadwal Baru',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.orange[700]),
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 56),
+                  side: BorderSide(color: Colors.orange[200]!, width: 1.5),
+                  backgroundColor: Colors.orange[50],
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Daftar jadwal
+              if (schedules.isEmpty)
+                _EmptySchedule()
+              else
+                ...schedules.map((s) => _ScheduleCard(
+                      schedule: s,
+                      onEdit: () => _openForm(schedule: s),
+                      onDelete: () => _confirmDelete(s),
+                    )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ─── Fallback: query tanpa orderBy jika index belum dibuat ───────────────────
+
+class _FallbackScheduleList extends StatelessWidget {
+  final String driverId;
+  final Driver driver;
+  final VoidCallback onAdd;
+  final void Function(Schedule) onEdit;
+  final void Function(Schedule) onDelete;
+
+  const _FallbackScheduleList({
+    required this.driverId,
+    required this.driver,
+    required this.onAdd,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('schedules')
+          .where('driverId', isEqualTo: driverId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        final schedules = docs
+            .map((d) => Schedule.fromMap(d.id, d.data() as Map<String, dynamic>))
+            .toList()
+          ..sort((a, b) => a.scheduleDate.compareTo(b.scheduleDate));
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Banner peringatan index
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber[200]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.amber[700], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Buat Firestore composite index untuk koleksi "schedules": '
+                      'field driverId (ASC) + scheduleDate (ASC) agar tampilan optimal.',
+                      style: TextStyle(fontSize: 11, color: Colors.amber[900]),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Daftar jadwal
-                  if (_schedules.isEmpty)
-                    _EmptySchedule()
-                  else
-                    ..._schedules.map((s) => _ScheduleCard(
-                          schedule: s,
-                          onEdit: () => _openForm(schedule: s),
-                          onDelete: () => _confirmDelete(s),
-                        )),
                 ],
               ),
             ),
+            _DriverBanner(driver: driver),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onAdd,
+              icon: Icon(Icons.add_circle_outline, color: Colors.orange[700]),
+              label: Text('Tambah Jadwal Baru',
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, color: Colors.orange[700])),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 56),
+                side: BorderSide(color: Colors.orange[200]!, width: 1.5),
+                backgroundColor: Colors.orange[50],
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (schedules.isEmpty)
+              _EmptySchedule()
+            else
+              ...schedules.map((s) => _ScheduleCard(
+                    schedule: s,
+                    onEdit: () => onEdit(s),
+                    onDelete: () => onDelete(s),
+                  )),
+          ],
+        );
+      },
     );
   }
 }
@@ -282,8 +389,7 @@ class _DriverBanner extends StatelessWidget {
                         fontWeight: FontWeight.bold, fontSize: 14)),
                 if (driver.phone.isNotEmpty)
                   Text(driver.phone,
-                      style:
-                          TextStyle(color: Colors.grey[500], fontSize: 12)),
+                      style: TextStyle(color: Colors.grey[500], fontSize: 12)),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -352,7 +458,6 @@ class _ScheduleCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header card
           Container(
             padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             decoration: BoxDecoration(
@@ -386,15 +491,14 @@ class _ScheduleCard extends StatelessWidget {
                       ),
                       Text(
                         _formatDate(schedule.scheduleDate),
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey[600]),
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: color.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
@@ -428,31 +532,25 @@ class _ScheduleCard extends StatelessWidget {
                           Icon(Icons.delete_outline_rounded,
                               size: 16, color: Colors.red),
                           SizedBox(width: 8),
-                          Text('Hapus',
-                              style: TextStyle(color: Colors.red))
+                          Text('Hapus', style: TextStyle(color: Colors.red))
                         ])),
                   ],
-                  icon: Icon(Icons.more_vert,
-                      color: Colors.grey[500], size: 18),
+                  icon: Icon(Icons.more_vert, color: Colors.grey[500], size: 18),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
               ],
             ),
           ),
-
-          // Body card
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (schedule.startTime.isNotEmpty ||
-                    schedule.endTime.isNotEmpty)
+                if (schedule.startTime.isNotEmpty || schedule.endTime.isNotEmpty)
                   _InfoRow(
                     icon: Icons.access_time_rounded,
-                    text:
-                        '${schedule.startTime} — ${schedule.endTime}',
+                    text: '${schedule.startTime} — ${schedule.endTime}',
                     color: Colors.blue,
                   ),
                 if (schedule.location.isNotEmpty) ...[
@@ -470,9 +568,7 @@ class _ScheduleCard extends StatelessWidget {
                   Text(
                     schedule.description,
                     style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                        height: 1.4),
+                        fontSize: 13, color: Colors.grey[600], height: 1.4),
                   ),
                 ],
               ],
@@ -500,8 +596,7 @@ class _InfoRow extends StatelessWidget {
   final String text;
   final MaterialColor color;
 
-  const _InfoRow(
-      {required this.icon, required this.text, required this.color});
+  const _InfoRow({required this.icon, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -511,8 +606,7 @@ class _InfoRow extends StatelessWidget {
         const SizedBox(width: 6),
         Expanded(
           child: Text(text,
-              style:
-                  TextStyle(fontSize: 12, color: Colors.grey[700])),
+              style: TextStyle(fontSize: 12, color: Colors.grey[700])),
         ),
       ],
     );
@@ -528,14 +622,12 @@ class _EmptySchedule extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.calendar_today_outlined,
-              size: 64, color: Colors.grey[300]),
+          Icon(Icons.calendar_today_outlined, size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             'Belum ada jadwal untuk driver ini.\nTambahkan jadwal baru di atas.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Colors.grey[400], fontSize: 14, height: 1.5),
+            style: TextStyle(color: Colors.grey[400], fontSize: 14, height: 1.5),
           ),
         ],
       ),
@@ -622,10 +714,7 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
             hour: int.tryParse(parts[0]) ?? 8,
             minute: int.tryParse(parts[1]) ?? 0)
         : const TimeOfDay(hour: 8, minute: 0);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: initial,
-    );
+    final picked = await showTimePicker(context: context, initialTime: initial);
     if (picked != null) {
       ctrl.text =
           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
@@ -669,7 +758,6 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
@@ -697,21 +785,20 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ),
                       Text(
                         'Driver: ${widget.driver.name}',
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 11),
+                        style:
+                            const TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                     ],
                   ),
                 ),
                 InkWell(
                   onTap: () => Navigator.pop(context),
-                  child: const Icon(Icons.close,
-                      color: Colors.white70, size: 20),
+                  child:
+                      const Icon(Icons.close, color: Colors.white70, size: 20),
                 ),
               ],
             ),
           ),
-
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -732,7 +819,6 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                           : null,
                     ),
                     const SizedBox(height: 14),
-
                     _label('TANGGAL *'),
                     const SizedBox(height: 8),
                     InkWell(
@@ -751,11 +837,9 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                             Icon(Icons.calendar_today_outlined,
                                 color: Colors.grey[400], size: 20),
                             const SizedBox(width: 12),
-                            Text(
-                              _formatDate(_selectedDate),
-                              style: TextStyle(
-                                  fontSize: 14, color: Colors.grey[800]),
-                            ),
+                            Text(_formatDate(_selectedDate),
+                                style: TextStyle(
+                                    fontSize: 14, color: Colors.grey[800])),
                             const Spacer(),
                             Icon(Icons.edit_calendar_outlined,
                                 color: Colors.orange[400], size: 18),
@@ -764,7 +848,6 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
-
                     Row(
                       children: [
                         Expanded(
@@ -803,34 +886,28 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ],
                     ),
                     const SizedBox(height: 14),
-
                     _label('LOKASI / TUJUAN'),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _locationCtrl,
-                      decoration: _inputDeco(
-                          'Contoh: Gudang Madiun → Surabaya',
+                      decoration: _inputDeco('Contoh: Gudang Madiun → Surabaya',
                           Icons.location_on_outlined),
                     ),
                     const SizedBox(height: 14),
-
                     _label('KETERANGAN / DESKRIPSI'),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _descCtrl,
                       maxLines: 3,
-                      decoration: _inputDeco(
-                          'Catatan tambahan untuk driver...',
+                      decoration: _inputDeco('Catatan tambahan untuk driver...',
                           Icons.description_outlined),
                     ),
                     const SizedBox(height: 14),
-
                     _label('STATUS'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       value: _selectedStatus,
-                      onChanged: (v) =>
-                          setState(() => _selectedStatus = v!),
+                      onChanged: (v) => setState(() => _selectedStatus = v!),
                       decoration: _inputDeco('', Icons.flag_outlined),
                       items: _statuses
                           .map((e) => DropdownMenuItem(
@@ -847,19 +924,17 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(_statusLabel(e),
-                                        style: const TextStyle(
-                                            fontSize: 14)),
+                                        style:
+                                            const TextStyle(fontSize: 14)),
                                   ],
                                 ),
                               ))
                           .toList(),
                       dropdownColor: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      icon: Icon(Icons.expand_more,
-                          color: Colors.grey[400]),
+                      icon: Icon(Icons.expand_more, color: Colors.grey[400]),
                     ),
                     const SizedBox(height: 24),
-
                     Row(
                       children: [
                         Expanded(
@@ -868,14 +943,11 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size(0, 48),
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(12)),
-                              side: BorderSide(
-                                  color: Colors.grey[300]!),
+                                  borderRadius: BorderRadius.circular(12)),
+                              side: BorderSide(color: Colors.grey[300]!),
                             ),
                             child: Text('Batal',
-                                style: TextStyle(
-                                    color: Colors.grey[700])),
+                                style: TextStyle(color: Colors.grey[700])),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -885,11 +957,9 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size(0, 48),
                               backgroundColor: Colors.orange[700],
-                              disabledBackgroundColor:
-                                  Colors.orange[300],
+                              disabledBackgroundColor: Colors.orange[300],
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12)),
                               elevation: 0,
                             ),
                             child: _isSaving
@@ -897,13 +967,11 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 2.5))
+                                        color: Colors.white, strokeWidth: 2.5))
                                 : const Text('Simpan',
                                     style: TextStyle(
                                         color: Colors.white,
-                                        fontWeight:
-                                            FontWeight.bold)),
+                                        fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],

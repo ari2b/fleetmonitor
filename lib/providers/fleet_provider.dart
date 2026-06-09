@@ -10,46 +10,49 @@ import '../utils/status_theme.dart';
 class FleetProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Koordinat real di sekitar Madiun, Jawa Timur
-  List<Vehicle> vehicles = [
-    Vehicle(
-      id: 'v1',
-      driverName: 'Budi Santoso',
-      plateNumber: 'AE 1234 CD',
-      vehicleType: 'Mobil',
-      vehicleBrand: 'Toyota',
-      vehicleYear: 2021,
-      vehicleColor: 'Putih',
-      lat: -7.6298,
-      lng: 111.5225,
-    ),
-    Vehicle(
-      id: 'v2',
-      driverName: 'Agus Setiawan',
-      plateNumber: 'AE 5678 EF',
-      vehicleType: 'Truk',
-      vehicleBrand: 'Mitsubishi',
-      vehicleYear: 2020,
-      vehicleColor: 'Hitam',
-      lat: -7.6350,
-      lng: 111.5300,
-    ),
-    Vehicle(
-      id: 'v3',
-      driverName: 'Rina Kartika',
-      plateNumber: 'AE 9012 GH',
-      vehicleType: 'Mobil',
-      vehicleBrand: 'Daihatsu',
-      vehicleYear: 2022,
-      vehicleColor: 'Silver',
-      lat: -7.6250,
-      lng: 111.5180,
-    ),
-  ];
+  // ─── State ─────────────────────────────────────────────
+  List<Vehicle> vehicles = [];
+  bool isLoadingVehicles = false;
 
   String? currentDriverId;
   bool isGpsActive = false;
   Timer? _gpsTimer;
+  StreamSubscription<QuerySnapshot>? _vehiclesSubscription;
+
+  // ─── Inisialisasi: stream kendaraan dari Firestore ─────
+  FleetProvider() {
+    _listenToVehicles();
+  }
+
+  /// Real-time listener ke koleksi 'vehicles' di Firestore.
+  /// Setiap perubahan (tambah/edit/hapus) langsung tercermin di UI.
+  void _listenToVehicles() {
+    isLoadingVehicles = true;
+    _vehiclesSubscription = _db
+        .collection('vehicles')
+        .orderBy('createdAt', descending: false)
+        .snapshots()
+        .listen(
+      (snapshot) {
+        vehicles = snapshot.docs
+            .map((d) => Vehicle.fromMap(d.id, d.data()))
+            .toList();
+        isLoadingVehicles = false;
+        notifyListeners();
+      },
+      onError: (_) {
+        isLoadingVehicles = false;
+        notifyListeners();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _vehiclesSubscription?.cancel();
+    _gpsTimer?.cancel();
+    super.dispose();
+  }
 
   // ─── Auth ──────────────────────────────────────────────
 
@@ -65,6 +68,8 @@ class FleetProvider extends ChangeNotifier {
     double lat = -7.6298,
     double lng = 111.5225,
   }) {
+    // Pastikan kendaraan driver ada di list (Firestore stream mungkin belum
+    // selesai saat login). Jika belum ada, tambahkan sementara.
     final idx = vehicles.indexWhere((v) => v.id == uid);
     if (idx == -1) {
       vehicles.add(Vehicle(
@@ -112,15 +117,12 @@ class FleetProvider extends ChangeNotifier {
       if (idx != -1) {
         final v = vehicles[idx];
         if (v.status == 'berangkat' || v.status == 'perjalanan') {
-          // Simulasi pergerakan di area Madiun (offset kecil dalam derajat lat/lng)
           final deltaLat = (random.nextDouble() - 0.5) * 0.001;
           final deltaLng = (random.nextDouble() - 0.5) * 0.001;
           v.lat = (v.lat + deltaLat).clamp(-7.70, -7.58);
           v.lng = (v.lng + deltaLng).clamp(111.48, 111.58);
-          // Hitung heading berdasarkan arah pergerakan
           v.heading = (atan2(deltaLng, deltaLat) * 180 / pi + 360) % 360;
 
-          // Update posisi ke Firestore (untuk driver login)
           _db.collection('users').doc(currentDriverId).update({
             'lat': v.lat,
             'lng': v.lng,
@@ -133,7 +135,7 @@ class FleetProvider extends ChangeNotifier {
     });
   }
 
-  // ─── Update posisi dari GPS device nyata ──────────────
+  // ─── Update posisi GPS nyata ───────────────────────────
   void updateGpsPosition({
     required String id,
     required double lat,
@@ -147,7 +149,6 @@ class FleetProvider extends ChangeNotifier {
       vehicles[idx].heading = heading;
       notifyListeners();
 
-      // Simpan ke Firestore
       _db.collection('users').doc(id).update({
         'lat': lat,
         'lng': lng,
@@ -184,7 +185,6 @@ class FleetProvider extends ChangeNotifier {
   }) async {
     final docRef = _db.collection('vehicles').doc();
     final random = Random();
-    // Posisi acak di sekitar Madiun
     final newVehicle = Vehicle(
       id: docRef.id,
       driverName: driverName,
@@ -201,9 +201,7 @@ class FleetProvider extends ChangeNotifier {
       ...newVehicle.toMap(),
       'createdAt': FieldValue.serverTimestamp(),
     });
-
-    vehicles.add(newVehicle);
-    notifyListeners();
+    // Tidak perlu push ke `vehicles` manual — stream Firestore akan update otomatis
   }
 
   Future<void> updateVehicleData({
