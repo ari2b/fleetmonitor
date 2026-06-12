@@ -57,8 +57,6 @@ class AdminJadwalView extends StatefulWidget {
 class _AdminJadwalViewState extends State<AdminJadwalView> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// Stream real-time jadwal dari Firestore.
-  /// Tidak perlu index gabungan karena hanya filter driverId + sort scheduleDate.
   Stream<List<Schedule>> get _schedulesStream => _db
       .collection('schedules')
       .where('driverId', isEqualTo: widget.driver.id)
@@ -164,15 +162,12 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
       body: StreamBuilder<List<Schedule>>(
         stream: _schedulesStream,
         builder: (context, snapshot) {
-          // ── Loading ──────────────────────────────────────
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // ── Error (mis. index Firestore belum dibuat) ────
           if (snapshot.hasError) {
             final err = snapshot.error.toString();
-            // Cek apakah error index — fallback query tanpa orderBy
             if (err.contains('index') || err.contains('FAILED_PRECONDITION')) {
               return _FallbackScheduleList(
                 driverId: widget.driver.id,
@@ -193,8 +188,7 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
                   const SizedBox(height: 4),
                   Text(err,
                       textAlign: TextAlign.center,
-                      style:
-                          TextStyle(color: Colors.grey[400], fontSize: 11)),
+                      style: TextStyle(color: Colors.grey[400], fontSize: 11)),
                 ],
               ),
             );
@@ -205,11 +199,8 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Info driver
               _DriverBanner(driver: widget.driver),
               const SizedBox(height: 16),
-
-              // Tombol tambah jadwal
               OutlinedButton.icon(
                 onPressed: () => _openForm(),
                 icon: Icon(Icons.add_circle_outline, color: Colors.orange[700]),
@@ -227,10 +218,8 @@ class _AdminJadwalViewState extends State<AdminJadwalView> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // Daftar jadwal
               if (schedules.isEmpty)
-                _EmptySchedule()
+                const _EmptySchedule()
               else
                 ...schedules.map((s) => _ScheduleCard(
                       schedule: s,
@@ -276,14 +265,14 @@ class _FallbackScheduleList extends StatelessWidget {
 
         final docs = snapshot.data?.docs ?? [];
         final schedules = docs
-            .map((d) => Schedule.fromMap(d.id, d.data() as Map<String, dynamic>))
+            .map((d) =>
+                Schedule.fromMap(d.id, d.data() as Map<String, dynamic>))
             .toList()
           ..sort((a, b) => a.scheduleDate.compareTo(b.scheduleDate));
 
         return ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Banner peringatan index
             Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
@@ -324,7 +313,7 @@ class _FallbackScheduleList extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             if (schedules.isEmpty)
-              _EmptySchedule()
+              const _EmptySchedule()
             else
               ...schedules.map((s) => _ScheduleCard(
                     schedule: s,
@@ -437,6 +426,17 @@ class _ScheduleCard extends StatelessWidget {
     required this.onDelete,
   });
 
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    const days = [
+      'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'
+    ];
+    return '${days[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = _statusColor(schedule.status);
@@ -491,7 +491,8 @@ class _ScheduleCard extends StatelessWidget {
                       ),
                       Text(
                         _formatDate(schedule.scheduleDate),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style:
+                            TextStyle(fontSize: 12, color: Colors.grey[600]),
                       ),
                     ],
                   ),
@@ -535,7 +536,8 @@ class _ScheduleCard extends StatelessWidget {
                           Text('Hapus', style: TextStyle(color: Colors.red))
                         ])),
                   ],
-                  icon: Icon(Icons.more_vert, color: Colors.grey[500], size: 18),
+                  icon:
+                      Icon(Icons.more_vert, color: Colors.grey[500], size: 18),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
                 ),
@@ -547,7 +549,8 @@ class _ScheduleCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (schedule.startTime.isNotEmpty || schedule.endTime.isNotEmpty)
+                if (schedule.startTime.isNotEmpty ||
+                    schedule.endTime.isNotEmpty)
                   _InfoRow(
                     icon: Icons.access_time_rounded,
                     text: '${schedule.startTime} — ${schedule.endTime}',
@@ -578,17 +581,6 @@ class _ScheduleCard extends StatelessWidget {
       ),
     );
   }
-
-  String _formatDate(DateTime date) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
-    ];
-    const days = [
-      'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'
-    ];
-    return '${days[date.weekday - 1]}, ${date.day} ${months[date.month - 1]} ${date.year}';
-  }
 }
 
 class _InfoRow extends StatelessWidget {
@@ -596,7 +588,8 @@ class _InfoRow extends StatelessWidget {
   final String text;
   final MaterialColor color;
 
-  const _InfoRow({required this.icon, required this.text, required this.color});
+  const _InfoRow(
+      {required this.icon, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -616,18 +609,22 @@ class _InfoRow extends StatelessWidget {
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
 class _EmptySchedule extends StatelessWidget {
+  const _EmptySchedule();
+
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
         children: [
-          Icon(Icons.calendar_today_outlined, size: 64, color: Colors.grey[300]),
+          Icon(Icons.calendar_today_outlined,
+              size: 64, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             'Belum ada jadwal untuk driver ini.\nTambahkan jadwal baru di atas.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[400], fontSize: 14, height: 1.5),
+            style:
+                TextStyle(color: Colors.grey[400], fontSize: 14, height: 1.5),
           ),
         ],
       ),
@@ -696,15 +693,20 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
     super.dispose();
   }
 
+  // FIX: Hapus parameter locale — sudah dihandle global di MaterialApp.
+  // Sebelumnya: locale: const Locale('id', 'ID') → crash karena
+  // flutter_localizations belum dikonfigurasi.
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      locale: const Locale('id', 'ID'),
     );
-    if (picked != null) setState(() => _selectedDate = picked);
+    // FIX: Cek mounted sebelum setState
+    if (picked != null && mounted) {
+      setState(() => _selectedDate = picked);
+    }
   }
 
   Future<void> _pickTime(TextEditingController ctrl) async {
@@ -714,8 +716,12 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
             hour: int.tryParse(parts[0]) ?? 8,
             minute: int.tryParse(parts[1]) ?? 0)
         : const TimeOfDay(hour: 8, minute: 0);
-    final picked = await showTimePicker(context: context, initialTime: initial);
-    if (picked != null) {
+
+    // FIX: Cek mounted sebelum showTimePicker
+    if (!mounted) return;
+    final picked =
+        await showTimePicker(context: context, initialTime: initial);
+    if (picked != null && mounted) {
       ctrl.text =
           '${picked.hour.toString().padLeft(2, '0')}:${picked.minute.toString().padLeft(2, '0')}';
     }
@@ -738,8 +744,25 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
       status: _selectedStatus,
     );
 
-    await widget.onSave(schedule, !isEdit);
-    if (mounted) Navigator.pop(context);
+    // FIX: Tambah try-catch agar error Firestore tidak crash diam-diam
+    try {
+      await widget.onSave(schedule, !isEdit);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menyimpan jadwal: $e'),
+            backgroundColor: Colors.red[600],
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          ),
+        );
+      }
+    }
   }
 
   String _formatDate(DateTime d) {
@@ -758,6 +781,7 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Header ──────────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
@@ -785,20 +809,22 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ),
                       Text(
                         'Driver: ${widget.driver.name}',
-                        style:
-                            const TextStyle(color: Colors.white70, fontSize: 11),
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11),
                       ),
                     ],
                   ),
                 ),
                 InkWell(
                   onTap: () => Navigator.pop(context),
-                  child:
-                      const Icon(Icons.close, color: Colors.white70, size: 20),
+                  child: const Icon(Icons.close,
+                      color: Colors.white70, size: 20),
                 ),
               ],
             ),
           ),
+
+          // ── Form Body ────────────────────────────────────────────────────
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -807,6 +833,7 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Judul
                     _label('JUDUL KEGIATAN *'),
                     const SizedBox(height: 8),
                     TextFormField(
@@ -819,6 +846,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                           : null,
                     ),
                     const SizedBox(height: 14),
+
+                    // Tanggal
                     _label('TANGGAL *'),
                     const SizedBox(height: 8),
                     InkWell(
@@ -848,6 +877,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ),
                     ),
                     const SizedBox(height: 14),
+
+                    // Jam mulai & selesai
                     Row(
                       children: [
                         Expanded(
@@ -886,28 +917,37 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       ],
                     ),
                     const SizedBox(height: 14),
+
+                    // Lokasi
                     _label('LOKASI / TUJUAN'),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _locationCtrl,
-                      decoration: _inputDeco('Contoh: Gudang Madiun → Surabaya',
+                      decoration: _inputDeco(
+                          'Contoh: Gudang Madiun → Surabaya',
                           Icons.location_on_outlined),
                     ),
                     const SizedBox(height: 14),
+
+                    // Deskripsi
                     _label('KETERANGAN / DESKRIPSI'),
                     const SizedBox(height: 8),
                     TextFormField(
                       controller: _descCtrl,
                       maxLines: 3,
-                      decoration: _inputDeco('Catatan tambahan untuk driver...',
+                      decoration: _inputDeco(
+                          'Catatan tambahan untuk driver...',
                           Icons.description_outlined),
                     ),
                     const SizedBox(height: 14),
+
+                    // Status
                     _label('STATUS'),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       value: _selectedStatus,
-                      onChanged: (v) => setState(() => _selectedStatus = v!),
+                      onChanged: (v) =>
+                          setState(() => _selectedStatus = v!),
                       decoration: _inputDeco('', Icons.flag_outlined),
                       items: _statuses
                           .map((e) => DropdownMenuItem(
@@ -924,8 +964,7 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(_statusLabel(e),
-                                        style:
-                                            const TextStyle(fontSize: 14)),
+                                        style: const TextStyle(fontSize: 14)),
                                   ],
                                 ),
                               ))
@@ -935,6 +974,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                       icon: Icon(Icons.expand_more, color: Colors.grey[400]),
                     ),
                     const SizedBox(height: 24),
+
+                    // Tombol Batal & Simpan
                     Row(
                       children: [
                         Expanded(
@@ -947,7 +988,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                               side: BorderSide(color: Colors.grey[300]!),
                             ),
                             child: Text('Batal',
-                                style: TextStyle(color: Colors.grey[700])),
+                                style:
+                                    TextStyle(color: Colors.grey[700])),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -967,7 +1009,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                                     width: 20,
                                     height: 20,
                                     child: CircularProgressIndicator(
-                                        color: Colors.white, strokeWidth: 2.5))
+                                        color: Colors.white,
+                                        strokeWidth: 2.5))
                                 : const Text('Simpan',
                                     style: TextStyle(
                                         color: Colors.white,
