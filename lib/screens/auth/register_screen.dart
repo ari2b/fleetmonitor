@@ -2,6 +2,15 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../providers/fleet_provider.dart';
 
+// Jenis kendaraan — sinkron dengan kVehicleTypes di admin_kelola_kendaraan_view.dart
+const List<String> kVehicleTypes = [
+  'Mobil',
+  'Truk',
+  'Pickup',
+  'Van/Minibus',
+  'Motor',
+];
+
 class RegisterScreen extends StatefulWidget {
   final String role;
   final FleetProvider provider;
@@ -20,6 +29,9 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _plateCtrl = TextEditingController();
+
+  // Jenis kendaraan yang dipilih driver saat registrasi
+  String _selectedVehicleType = kVehicleTypes.first;
 
   bool _obscurePass = true;
   bool _obscureConfirm = true;
@@ -110,6 +122,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       name: _nameCtrl.text,
       role: widget.role,
       plateNumber: !isAdmin ? _plateCtrl.text : null,
+      vehicleType: !isAdmin ? _selectedVehicleType : null,
     );
 
     if (!mounted) return;
@@ -136,10 +149,11 @@ class _RegisterScreenState extends State<RegisterScreen>
       _showGoogleDriverPlateDialog();
       return;
     }
-    await _processGoogleRegister(plateNumber: null);
+    await _processGoogleRegister(plateNumber: null, vehicleType: null);
   }
 
-  Future<void> _processGoogleRegister({String? plateNumber}) async {
+  Future<void> _processGoogleRegister(
+      {String? plateNumber, String? vehicleType}) async {
     setState(() {
       _isGoogleLoading = true;
       _errorMsg = null;
@@ -148,6 +162,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     final result = await AuthService.registerWithGoogle(
       role: widget.role,
       plateNumber: plateNumber,
+      vehicleType: vehicleType,
     );
 
     if (!mounted) return;
@@ -175,10 +190,11 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
-  // ── Dialog plat nomor untuk driver Google ─────────────
+  // ── Dialog plat nomor + jenis kendaraan untuk driver Google ──
   void _showGoogleDriverPlateDialog() {
     final plateCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
+    String selectedType = kVehicleTypes.first;
     bool loading = false;
 
     showDialog(
@@ -204,14 +220,14 @@ class _RegisterScreenState extends State<RegisterScreen>
                         color: Colors.teal[600], size: 32),
                   ),
                   const SizedBox(height: 16),
-                  const Text('Plat Nomor Kendaraan',
+                  const Text('Data Kendaraan',
                       style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF1E293B))),
                   const SizedBox(height: 6),
                   Text(
-                    'Masukkan plat nomor kendaraan\nsebelum melanjutkan dengan Google.',
+                    'Lengkapi data kendaraan Anda\nsebelum melanjutkan dengan Google.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontSize: 13,
@@ -219,12 +235,14 @@ class _RegisterScreenState extends State<RegisterScreen>
                         height: 1.4),
                   ),
                   const SizedBox(height: 20),
+                  // ── Plat Nomor ──
                   TextFormField(
                     controller: plateCtrl,
                     textCapitalization: TextCapitalization.characters,
                     decoration: InputDecoration(
+                      labelText: 'Plat Nomor',
                       hintText: 'Contoh: B 1234 CD',
-                      prefixIcon: Icon(Icons.directions_car_outlined,
+                      prefixIcon: Icon(Icons.credit_card_outlined,
                           color: Colors.grey[400], size: 20),
                       filled: true,
                       fillColor: Colors.grey[50],
@@ -247,6 +265,42 @@ class _RegisterScreenState extends State<RegisterScreen>
                         (v == null || v.trim().isEmpty)
                             ? 'Plat nomor tidak boleh kosong'
                             : null,
+                  ),
+                  const SizedBox(height: 14),
+                  // ── Jenis Kendaraan ──
+                  DropdownButtonFormField<String>(
+                    value: selectedType,
+                    decoration: InputDecoration(
+                      labelText: 'Jenis Kendaraan',
+                      prefixIcon: Icon(Icons.category_outlined,
+                          color: Colors.grey[400], size: 20),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.teal[600]!, width: 1.8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                    items: kVehicleTypes
+                        .map((t) => DropdownMenuItem(
+                            value: t, child: Text(t)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setDlg(() => selectedType = v!),
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    icon: Icon(Icons.expand_more,
+                        color: Colors.grey[400]),
                   ),
                   const SizedBox(height: 20),
                   Row(
@@ -278,7 +332,9 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   setDlg(() => loading = true);
                                   Navigator.pop(ctx);
                                   await _processGoogleRegister(
-                                      plateNumber: plateCtrl.text);
+                                    plateNumber: plateCtrl.text,
+                                    vehicleType: selectedType,
+                                  );
                                 },
                           style: ElevatedButton.styleFrom(
                             minimumSize: const Size(0, 46),
@@ -552,6 +608,51 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       (v == null || v.trim().isEmpty)
                                           ? 'Plat nomor tidak boleh kosong'
                                           : null,
+                                ),
+                                const SizedBox(height: 16),
+                                _label('JENIS KENDARAAN'),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedVehicleType,
+                                  decoration: InputDecoration(
+                                    hintText: 'Pilih jenis kendaraan',
+                                    prefixIcon: Icon(
+                                        Icons.category_outlined,
+                                        color: Colors.grey[400],
+                                        size: 20),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: accent, width: 1.8)),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 15),
+                                  ),
+                                  items: kVehicleTypes
+                                      .map((t) => DropdownMenuItem(
+                                          value: t, child: Text(t)))
+                                      .toList(),
+                                  onChanged: (v) => setState(
+                                      () => _selectedVehicleType = v!),
+                                  dropdownColor: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                  icon: Icon(Icons.expand_more,
+                                      color: Colors.grey[400]),
                                 ),
                                 const SizedBox(height: 16),
                               ],

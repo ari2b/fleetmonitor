@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/vehicle_model.dart';
 import '../utils/status_theme.dart';
@@ -18,6 +19,9 @@ class FleetProvider extends ChangeNotifier {
   bool isGpsActive = false;
   Timer? _gpsTimer;
   StreamSubscription<QuerySnapshot>? _vehiclesSubscription;
+
+  /// UID Firebase Auth pengguna yang sedang login (untuk fitur profil driver)
+  String? get currentUserId => FirebaseAuth.instance.currentUser?.uid;
 
   // ─── Inisialisasi: stream kendaraan dari Firestore ─────
   FleetProvider() {

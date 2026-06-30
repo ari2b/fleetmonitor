@@ -17,6 +17,7 @@ class AuthService {
     required String name,
     required String role,
     String? plateNumber,
+    String? vehicleType,
   }) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
@@ -35,6 +36,7 @@ class AuthService {
       };
       if (role == 'driver' && plateNumber != null) {
         userData['plateNumber'] = plateNumber.trim().toUpperCase();
+        userData['vehicleType'] = vehicleType ?? 'Mobil';
         userData['status'] = 'idle';
         userData['lat'] = 0.5;
         userData['lng'] = 0.5;
@@ -54,7 +56,8 @@ class AuthService {
   // Hanya untuk user BARU. Jika sudah terdaftar → tolak & minta login.
   static Future<Map<String, dynamic>> registerWithGoogle({
     required String role,
-    String? plateNumber, // wajib jika role == 'driver'
+    String? plateNumber,
+    String? vehicleType,
   }) async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -110,6 +113,7 @@ class AuthService {
       };
       if (role == 'driver') {
         userData['plateNumber'] = plateNumber!.trim().toUpperCase();
+        userData['vehicleType'] = vehicleType ?? 'Mobil';
         userData['status'] = 'idle';
         userData['lat'] = 0.5;
         userData['lng'] = 0.5;
