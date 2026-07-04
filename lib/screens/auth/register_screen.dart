@@ -11,6 +11,35 @@ const List<String> kVehicleTypes = [
   'Motor',
 ];
 
+// Merk & tipe kendaraan — dropdown bertingkat (tipe menyesuaikan merk terpilih)
+const Map<String, List<String>> kVehicleBrandsAndModels = {
+  'Toyota': ['Avanza', 'Fortuner', 'Innova', 'Innova Zenix', 'Hilux', 'Rush', 'Calya', 'Agya'],
+  'Daihatsu': ['Xenia', 'Terios', 'Gran Max', 'Sigra', 'Ayla'],
+  'Mitsubishi': ['Pajero Sport', 'Xpander', 'L300', 'Colt Diesel', 'Triton'],
+  'Suzuki': ['Ertiga', 'APV', 'Carry', 'XL7'],
+  'Isuzu': ['Panther', 'Elf', 'Traga', 'Giga'],
+  'Honda': ['Brio', 'Mobilio', 'BR-V', 'CR-V'],
+  'Hino': ['Dutro', 'Ranger'],
+  'Yamaha': ['NMAX', 'Vixion', 'MX King'],
+  'Honda Motor': ['Beat', 'Vario', 'Scoopy'],
+};
+
+List<String> get kVehicleBrands => kVehicleBrandsAndModels.keys.toList();
+
+// Warna kendaraan — dropdown pilihan warna umum
+const List<String> kVehicleColors = [
+  'Putih',
+  'Hitam',
+  'Silver',
+  'Abu-abu',
+  'Merah',
+  'Biru',
+  'Hijau',
+  'Kuning',
+  'Coklat',
+  'Emas',
+];
+
 class RegisterScreen extends StatefulWidget {
   final String role;
   final FleetProvider provider;
@@ -29,9 +58,14 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _plateCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
 
   // Jenis kendaraan yang dipilih driver saat registrasi
   String _selectedVehicleType = kVehicleTypes.first;
+  String _selectedVehicleBrand = kVehicleBrandsAndModels.keys.first;
+  String _selectedVehicleModel =
+      kVehicleBrandsAndModels.values.first.first;
+  String _selectedVehicleColor = kVehicleColors.first;
 
   bool _obscurePass = true;
   bool _obscureConfirm = true;
@@ -70,6 +104,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     _passCtrl.dispose();
     _confirmCtrl.dispose();
     _plateCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -122,7 +157,11 @@ class _RegisterScreenState extends State<RegisterScreen>
       name: _nameCtrl.text,
       role: widget.role,
       plateNumber: !isAdmin ? _plateCtrl.text : null,
+      phone: !isAdmin ? _phoneCtrl.text : null,
       vehicleType: !isAdmin ? _selectedVehicleType : null,
+      vehicleBrand: !isAdmin ? _selectedVehicleBrand : null,
+      vehicleModel: !isAdmin ? _selectedVehicleModel : null,
+      vehicleColor: !isAdmin ? _selectedVehicleColor : null,
     );
 
     if (!mounted) return;
@@ -153,7 +192,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Future<void> _processGoogleRegister(
-      {String? plateNumber, String? vehicleType}) async {
+      {String? plateNumber,
+      String? phone,
+      String? vehicleType,
+      String? vehicleBrand,
+      String? vehicleModel,
+      String? vehicleColor}) async {
     setState(() {
       _isGoogleLoading = true;
       _errorMsg = null;
@@ -162,7 +206,11 @@ class _RegisterScreenState extends State<RegisterScreen>
     final result = await AuthService.registerWithGoogle(
       role: widget.role,
       plateNumber: plateNumber,
+      phone: phone,
       vehicleType: vehicleType,
+      vehicleBrand: vehicleBrand,
+      vehicleModel: vehicleModel,
+      vehicleColor: vehicleColor,
     );
 
     if (!mounted) return;
@@ -193,8 +241,12 @@ class _RegisterScreenState extends State<RegisterScreen>
   // ── Dialog plat nomor + jenis kendaraan untuk driver Google ──
   void _showGoogleDriverPlateDialog() {
     final plateCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
     String selectedType = kVehicleTypes.first;
+    String selectedBrand = kVehicleBrandsAndModels.keys.first;
+    String selectedModel = kVehicleBrandsAndModels.values.first.first;
+    String selectedColor = kVehicleColors.first;
     bool loading = false;
 
     showDialog(
@@ -235,6 +287,38 @@ class _RegisterScreenState extends State<RegisterScreen>
                         height: 1.4),
                   ),
                   const SizedBox(height: 20),
+                  // ── Nomor Telepon ──
+                  TextFormField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    decoration: InputDecoration(
+                      labelText: 'Nomor Telepon',
+                      hintText: '08xxxxxxxxxx',
+                      prefixIcon: Icon(Icons.phone_outlined,
+                          color: Colors.grey[400], size: 20),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.teal[600]!, width: 1.8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                    validator: (v) =>
+                        (v == null || v.trim().isEmpty)
+                            ? 'Nomor telepon tidak boleh kosong'
+                            : null,
+                  ),
+                  const SizedBox(height: 14),
                   // ── Plat Nomor ──
                   TextFormField(
                     controller: plateCtrl,
@@ -302,6 +386,118 @@ class _RegisterScreenState extends State<RegisterScreen>
                     icon: Icon(Icons.expand_more,
                         color: Colors.grey[400]),
                   ),
+                  const SizedBox(height: 14),
+                  // ── Merk Kendaraan ──
+                  DropdownButtonFormField<String>(
+                    value: selectedBrand,
+                    decoration: InputDecoration(
+                      labelText: 'Merk Kendaraan',
+                      prefixIcon: Icon(Icons.local_offer_outlined,
+                          color: Colors.grey[400], size: 20),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.teal[600]!, width: 1.8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                    items: kVehicleBrands
+                        .map((b) => DropdownMenuItem(
+                            value: b, child: Text(b)))
+                        .toList(),
+                    onChanged: (v) => setDlg(() {
+                      selectedBrand = v!;
+                      selectedModel =
+                          kVehicleBrandsAndModels[v]!.first;
+                    }),
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    icon: Icon(Icons.expand_more,
+                        color: Colors.grey[400]),
+                  ),
+                  const SizedBox(height: 14),
+                  // ── Tipe Kendaraan — menyesuaikan merk ──
+                  DropdownButtonFormField<String>(
+                    value: selectedModel,
+                    decoration: InputDecoration(
+                      labelText: 'Tipe Kendaraan',
+                      prefixIcon: Icon(
+                          Icons.directions_car_filled_outlined,
+                          color: Colors.grey[400], size: 20),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.teal[600]!, width: 1.8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                    items: (kVehicleBrandsAndModels[selectedBrand] ?? [])
+                        .map((m) => DropdownMenuItem(
+                            value: m, child: Text(m)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setDlg(() => selectedModel = v!),
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    icon: Icon(Icons.expand_more,
+                        color: Colors.grey[400]),
+                  ),
+                  const SizedBox(height: 14),
+                  // ── Warna Kendaraan ──
+                  DropdownButtonFormField<String>(
+                    value: selectedColor,
+                    decoration: InputDecoration(
+                      labelText: 'Warna Kendaraan',
+                      prefixIcon: Icon(Icons.palette_outlined,
+                          color: Colors.grey[400], size: 20),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide:
+                              BorderSide(color: Colors.grey[200]!)),
+                      focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                              color: Colors.teal[600]!, width: 1.8)),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                    ),
+                    items: kVehicleColors
+                        .map((c) => DropdownMenuItem(
+                            value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) =>
+                        setDlg(() => selectedColor = v!),
+                    dropdownColor: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    icon: Icon(Icons.expand_more,
+                        color: Colors.grey[400]),
+                  ),
                   const SizedBox(height: 20),
                   Row(
                     children: [
@@ -333,7 +529,11 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   Navigator.pop(ctx);
                                   await _processGoogleRegister(
                                     plateNumber: plateCtrl.text,
+                                    phone: phoneCtrl.text,
                                     vehicleType: selectedType,
+                                    vehicleBrand: selectedBrand,
+                                    vehicleModel: selectedModel,
+                                    vehicleColor: selectedColor,
                                   );
                                 },
                           style: ElevatedButton.styleFrom(
@@ -595,6 +795,23 @@ class _RegisterScreenState extends State<RegisterScreen>
                               ),
                               const SizedBox(height: 16),
 
+                              // Telepon (driver only)
+                              if (!isAdmin) ...[
+                                _label('NOMOR TELEPON *'),
+                                const SizedBox(height: 8),
+                                _field(
+                                  ctrl: _phoneCtrl,
+                                  hint: '08xxxxxxxxxx',
+                                  icon: Icons.phone_outlined,
+                                  keyboard: TextInputType.phone,
+                                  validator: (v) =>
+                                      (v == null || v.trim().isEmpty)
+                                          ? 'Nomor telepon tidak boleh kosong'
+                                          : null,
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+
                               // Plat (driver only)
                               if (!isAdmin) ...[
                                 _label('PLAT NOMOR KENDARAAN'),
@@ -648,6 +865,153 @@ class _RegisterScreenState extends State<RegisterScreen>
                                       .toList(),
                                   onChanged: (v) => setState(
                                       () => _selectedVehicleType = v!),
+                                  dropdownColor: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                  icon: Icon(Icons.expand_more,
+                                      color: Colors.grey[400]),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Merk Kendaraan
+                                _label('MERK KENDARAAN'),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedVehicleBrand,
+                                  decoration: InputDecoration(
+                                    hintText: 'Pilih merk',
+                                    prefixIcon: Icon(
+                                        Icons.local_offer_outlined,
+                                        color: Colors.grey[400],
+                                        size: 20),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: accent, width: 1.8)),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 15),
+                                  ),
+                                  items: kVehicleBrands
+                                      .map((b) => DropdownMenuItem(
+                                          value: b, child: Text(b)))
+                                      .toList(),
+                                  onChanged: (v) => setState(() {
+                                    _selectedVehicleBrand = v!;
+                                    // Reset tipe ke pilihan pertama sesuai merk baru
+                                    _selectedVehicleModel =
+                                        kVehicleBrandsAndModels[v]!.first;
+                                  }),
+                                  dropdownColor: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                  icon: Icon(Icons.expand_more,
+                                      color: Colors.grey[400]),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Tipe Kendaraan — menyesuaikan merk terpilih
+                                _label('TIPE KENDARAAN'),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedVehicleModel,
+                                  decoration: InputDecoration(
+                                    hintText: 'Pilih tipe',
+                                    prefixIcon: Icon(
+                                        Icons.directions_car_filled_outlined,
+                                        color: Colors.grey[400],
+                                        size: 20),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: accent, width: 1.8)),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 15),
+                                  ),
+                                  items: (kVehicleBrandsAndModels[
+                                              _selectedVehicleBrand] ??
+                                          [])
+                                      .map((m) => DropdownMenuItem(
+                                          value: m, child: Text(m)))
+                                      .toList(),
+                                  onChanged: (v) => setState(
+                                      () => _selectedVehicleModel = v!),
+                                  dropdownColor: Colors.white,
+                                  borderRadius:
+                                      BorderRadius.circular(12),
+                                  icon: Icon(Icons.expand_more,
+                                      color: Colors.grey[400]),
+                                ),
+                                const SizedBox(height: 16),
+
+                                // Warna Kendaraan
+                                _label('WARNA KENDARAAN'),
+                                const SizedBox(height: 8),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedVehicleColor,
+                                  decoration: InputDecoration(
+                                    hintText: 'Pilih warna',
+                                    prefixIcon: Icon(
+                                        Icons.palette_outlined,
+                                        color: Colors.grey[400],
+                                        size: 20),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                    border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        borderSide: BorderSide(
+                                            color: accent, width: 1.8)),
+                                    contentPadding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 15),
+                                  ),
+                                  items: kVehicleColors
+                                      .map((c) => DropdownMenuItem(
+                                          value: c, child: Text(c)))
+                                      .toList(),
+                                  onChanged: (v) => setState(
+                                      () => _selectedVehicleColor = v!),
                                   dropdownColor: Colors.white,
                                   borderRadius:
                                       BorderRadius.circular(12),

@@ -4,6 +4,7 @@ class Vehicle {
   String plateNumber;
   String vehicleType;
   String vehicleBrand;
+  String vehicleModel;
   int vehicleYear;
   String vehicleColor;
   String status;
@@ -19,6 +20,7 @@ class Vehicle {
     required this.plateNumber,
     this.vehicleType = 'Mobil',
     this.vehicleBrand = '',
+    this.vehicleModel = '',
     this.vehicleYear = 2020,
     this.vehicleColor = '',
     this.status = 'idle',
@@ -36,6 +38,7 @@ class Vehicle {
       plateNumber: map['plateNumber'] ?? '',
       vehicleType: map['vehicleType'] ?? 'Mobil',
       vehicleBrand: map['vehicleBrand'] ?? '',
+      vehicleModel: map['vehicleModel'] ?? '',
       vehicleYear: (map['vehicleYear'] as num?)?.toInt() ?? 2020,
       vehicleColor: map['vehicleColor'] ?? '',
       status: map['status'] ?? 'idle',
@@ -52,6 +55,7 @@ class Vehicle {
       'plateNumber': plateNumber,
       'vehicleType': vehicleType,
       'vehicleBrand': vehicleBrand,
+      'vehicleModel': vehicleModel,
       'vehicleYear': vehicleYear,
       'vehicleColor': vehicleColor,
       'status': status,

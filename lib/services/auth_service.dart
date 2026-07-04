@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -16,8 +17,12 @@ class AuthService {
     required String password,
     required String name,
     required String role,
+    String? phone,
     String? plateNumber,
     String? vehicleType,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
   }) async {
     try {
       final cred = await _auth.createUserWithEmailAndPassword(
@@ -30,6 +35,7 @@ class AuthService {
         'uid': cred.user!.uid,
         'name': name.trim(),
         'email': email.trim(),
+        'phone': phone?.trim() ?? '',
         'role': role,
         'provider': 'email',
         'createdAt': FieldValue.serverTimestamp(),
@@ -37,12 +43,33 @@ class AuthService {
       if (role == 'driver' && plateNumber != null) {
         userData['plateNumber'] = plateNumber.trim().toUpperCase();
         userData['vehicleType'] = vehicleType ?? 'Mobil';
+        userData['vehicleBrand'] = vehicleBrand ?? '';
+        userData['vehicleModel'] = vehicleModel ?? '';
+        userData['vehicleColor'] = vehicleColor ?? '';
         userData['status'] = 'idle';
         userData['lat'] = 0.5;
         userData['lng'] = 0.5;
       }
 
       await _db.collection('users').doc(cred.user!.uid).set(userData);
+
+      // Sinkronkan juga ke koleksi 'drivers' & 'vehicles' supaya driver
+      // yang mendaftar sendiri langsung muncul di tampilan Kelola admin
+      // (Master Data Driver, jumlah kendaraan, dropdown armada, dll).
+      if (role == 'driver') {
+        await _syncDriverAndVehicle(
+          uid: cred.user!.uid,
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone ?? '',
+          plateNumber: plateNumber,
+          vehicleType: vehicleType,
+          vehicleBrand: vehicleBrand,
+          vehicleModel: vehicleModel,
+          vehicleColor: vehicleColor,
+        );
+      }
+
       // Kembalikan uid — signOut dilakukan di UI setelah dialog sukses
       return {'success': true, 'uid': cred.user!.uid};
     } on FirebaseAuthException catch (e) {
@@ -52,12 +79,63 @@ class AuthService {
     }
   }
 
+  // ─── Sync driver self-register ke koleksi drivers & vehicles ──
+  static Future<void> _syncDriverAndVehicle({
+    required String uid,
+    required String name,
+    required String email,
+    String phone = '',
+    String? plateNumber,
+    String? vehicleType,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
+  }) async {
+    try {
+      // 'drivers' — master data driver yang dibaca tampilan Kelola admin
+      await _db.collection('drivers').doc(uid).set({
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'status': 'aktif',
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // 'vehicles' — supaya kendaraan yang diisi saat registrasi langsung
+      // terhitung & muncul di dropdown Armada.
+      if (plateNumber != null && plateNumber.trim().isNotEmpty) {
+        await _db.collection('vehicles').doc(uid).set({
+          'driverId': uid,
+          'driverName': name,
+          'plateNumber': plateNumber.trim().toUpperCase(),
+          'vehicleType': vehicleType ?? 'Mobil',
+          'vehicleBrand': vehicleBrand ?? '',
+          'vehicleModel': vehicleModel ?? '',
+          'vehicleYear': DateTime.now().year,
+          'vehicleColor': vehicleColor ?? '',
+          'status': 'idle',
+          'lat': 0.5,
+          'lng': 0.5,
+          'heading': 0.0,
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('⚠️ _syncDriverAndVehicle gagal: $e');
+    }
+  }
+
   // ─── Register Google ───────────────────────────────────
   // Hanya untuk user BARU. Jika sudah terdaftar → tolak & minta login.
   static Future<Map<String, dynamic>> registerWithGoogle({
     required String role,
+    String? phone,
     String? plateNumber,
     String? vehicleType,
+    String? vehicleBrand,
+    String? vehicleModel,
+    String? vehicleColor,
   }) async {
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
@@ -106,6 +184,7 @@ class AuthService {
         'uid': uid,
         'name': cred.user!.displayName ?? googleUser.displayName ?? '',
         'email': cred.user!.email ?? googleUser.email,
+        'phone': phone?.trim() ?? '',
         'role': role,
         'provider': 'google',
         'photoUrl': cred.user!.photoURL ?? '',
@@ -114,12 +193,31 @@ class AuthService {
       if (role == 'driver') {
         userData['plateNumber'] = plateNumber!.trim().toUpperCase();
         userData['vehicleType'] = vehicleType ?? 'Mobil';
+        userData['vehicleBrand'] = vehicleBrand ?? '';
+        userData['vehicleModel'] = vehicleModel ?? '';
+        userData['vehicleColor'] = vehicleColor ?? '';
         userData['status'] = 'idle';
         userData['lat'] = 0.5;
         userData['lng'] = 0.5;
       }
 
       await _db.collection('users').doc(uid).set(userData);
+
+      // Sinkronkan juga ke koleksi 'drivers' & 'vehicles' (lihat penjelasan
+      // di _syncDriverAndVehicle) supaya konsisten dengan registrasi manual.
+      if (role == 'driver') {
+        await _syncDriverAndVehicle(
+          uid: uid,
+          name: cred.user!.displayName ?? googleUser.displayName ?? '',
+          email: cred.user!.email ?? googleUser.email ?? '',
+          phone: phone ?? '',
+          plateNumber: plateNumber,
+          vehicleType: vehicleType,
+          vehicleBrand: vehicleBrand,
+          vehicleModel: vehicleModel,
+          vehicleColor: vehicleColor,
+        );
+      }
 
       // Sign out setelah registrasi — user diminta login manual
       await _auth.signOut();
@@ -130,6 +228,71 @@ class AuthService {
       return {'success': false, 'message': _parseError(e.code)};
     } catch (e) {
       return {'success': false, 'message': 'Google Sign-In gagal. Coba lagi.'};
+    }
+  }
+
+  // ─── Admin Membuat Akun Driver Baru ───────────────────
+  // Dipakai admin untuk mendaftarkan driver dari dalam aplikasi.
+  // Memakai secondary Firebase App instance supaya createUser tidak
+  // menggantikan sesi login admin yang sedang aktif (createUser di
+  // instance default akan otomatis sign-in sebagai user baru).
+  static Future<Map<String, dynamic>> adminCreateDriver({
+    required String name,
+    required String email,
+    required String password,
+    String phone = '',
+    String status = 'aktif',
+  }) async {
+    FirebaseApp? secondaryApp;
+    try {
+      // Buat/gunakan secondary app instance bernama unik
+      try {
+        secondaryApp = Firebase.app('AdminCreateDriver');
+      } catch (_) {
+        secondaryApp = await Firebase.initializeApp(
+          name: 'AdminCreateDriver',
+          options: Firebase.app().options,
+        );
+      }
+
+      final secondaryAuth = FirebaseAuth.instanceFor(app: secondaryApp);
+
+      final cred = await secondaryAuth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      await cred.user!.updateDisplayName(name.trim());
+      final uid = cred.user!.uid;
+
+      // Simpan dokumen 'drivers' (master data) dan 'users' (profile login)
+      // dengan id yang sama (uid) agar driver bisa langsung login.
+      final driverData = {
+        'name': name.trim(),
+        'email': email.trim(),
+        'phone': phone.trim(),
+        'status': status,
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+      await _db.collection('drivers').doc(uid).set(driverData);
+      await _db.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': name.trim(),
+        'email': email.trim(),
+        'phone': phone.trim(),
+        'role': 'driver',
+        'provider': 'email',
+        'status': status,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Sign out dari secondary app supaya tidak menumpuk sesi
+      await secondaryAuth.signOut();
+
+      return {'success': true, 'uid': uid};
+    } on FirebaseAuthException catch (e) {
+      return {'success': false, 'message': _parseError(e.code)};
+    } catch (e) {
+      return {'success': false, 'message': 'Gagal membuat akun driver: $e'};
     }
   }
 

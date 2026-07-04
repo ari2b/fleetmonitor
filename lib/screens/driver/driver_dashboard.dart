@@ -1214,6 +1214,9 @@ class _DriverProfileViewState extends State<DriverProfileView> {
     final provider = d['provider'] as String? ?? '-';
     final plateNumber = d['plateNumber'] as String? ?? '';
     final vehicleType = d['vehicleType'] as String? ?? '';
+    final vehicleBrand = d['vehicleBrand'] as String? ?? '';
+    final vehicleModel = d['vehicleModel'] as String? ?? '';
+    final vehicleColor = d['vehicleColor'] as String? ?? '';
     final driverStatus = d['status'] as String? ?? 'idle';
     final createdAt = _formatTs(d['createdAt']);
 
@@ -1386,6 +1389,24 @@ class _DriverProfileViewState extends State<DriverProfileView> {
                     icon: Icons.category_outlined,
                     label: 'Jenis Kendaraan',
                     value: vehicleType,
+                  ),
+                if (vehicleBrand.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.local_offer_outlined,
+                    label: 'Merk Kendaraan',
+                    value: vehicleBrand,
+                  ),
+                if (vehicleModel.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.directions_car_filled_outlined,
+                    label: 'Tipe Kendaraan',
+                    value: vehicleModel,
+                  ),
+                if (vehicleColor.isNotEmpty)
+                  _InfoRow(
+                    icon: Icons.palette_outlined,
+                    label: 'Warna Kendaraan',
+                    value: vehicleColor,
                     isLast: true,
                   ),
               ],
@@ -1610,7 +1631,7 @@ class _VehicleRow extends StatelessWidget {
     final plate = vehicle['plateNumber'] as String? ?? '-';
     final type = vehicle['vehicleType'] as String? ?? 'Mobil';
     final brand = vehicle['vehicleBrand'] as String? ?? '';
-    final year = vehicle['vehicleYear']?.toString() ?? '';
+    final model = vehicle['vehicleModel'] as String? ?? '';
     final color = vehicle['vehicleColor'] as String? ?? '';
     final status = vehicle['status'] as String? ?? 'idle';
 
@@ -1660,7 +1681,8 @@ class _VehicleRow extends StatelessWidget {
                         fontSize: 15,
                         fontFamily: 'monospace',
                         color: Color(0xFF1E293B))),
-                Text('$type${brand.isNotEmpty ? ' • $brand' : ''}${year.isNotEmpty ? ' $year' : ''}${color.isNotEmpty ? ' • $color' : ''}',
+                Text(
+                    '$type${brand.isNotEmpty ? ' • $brand' : ''}${model.isNotEmpty ? ' $model' : ''}${color.isNotEmpty ? ' • $color' : ''}',
                     style:
                         TextStyle(fontSize: 11, color: Colors.grey[500])),
               ],

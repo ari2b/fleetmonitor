@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../providers/fleet_provider.dart';
 import '../../../models/driver_model.dart';
 import '../../../models/vehicle_model.dart';
+import '../../../services/auth_service.dart';
 import 'admin_kelola_kendaraan_view.dart';
 import 'admin_jadwal_view.dart';
 
@@ -47,21 +48,52 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
     if (mounted) setState(() => _isLoading = false);
   }
 
-  Future<void> _saveDriver(Driver driver, {bool isNew = false}) async {
-    final data = {
-      ...driver.toMap(),
-      if (isNew) 'createdAt': FieldValue.serverTimestamp(),
-    };
+  // Mengembalikan pesan error (String) jika gagal, atau null jika sukses.
+  Future<String?> _saveDriver(
+    Driver driver, {
+    bool isNew = false,
+    String? password,
+  }) async {
     if (isNew) {
-      final ref = await _db.collection('drivers').add(data);
-      driver = Driver.fromMap(ref.id, driver.toMap());
+      // Driver baru → buat akun Firebase Auth + dokumen 'users' & 'drivers'
+      // sekaligus (id keduanya sama) supaya driver bisa langsung login
+      // dan datanya otomatis connect ke sisi admin.
+      final result = await AuthService.adminCreateDriver(
+        name: driver.name,
+        email: driver.email,
+        phone: driver.phone,
+        password: password ?? '',
+        status: driver.status,
+      );
+
+      if (result['success'] != true) {
+        return result['message'] as String? ?? 'Gagal membuat driver.';
+      }
+
+      final uid = result['uid'] as String;
+      driver = Driver.fromMap(uid, driver.toMap());
       _drivers.add(driver);
     } else {
+      final data = driver.toMap();
+      // Update 'drivers' (master data) dan 'users' (profile login) bersamaan
+      // karena sejak sekarang id keduanya sama (uid).
       await _db.collection('drivers').doc(driver.id).update(data);
+      // merge + try/catch: driver lama (dibuat sebelum perbaikan ini)
+      // mungkin belum punya dokumen 'users' yang match, jadi jangan
+      // sampai gagal total hanya karena sinkronisasi opsional ini.
+      try {
+        await _db.collection('users').doc(driver.id).set({
+          'name': driver.name,
+          'email': driver.email,
+          'phone': driver.phone,
+          'status': driver.status,
+        }, SetOptions(merge: true));
+      } catch (_) {}
       final idx = _drivers.indexWhere((d) => d.id == driver.id);
       if (idx != -1) _drivers[idx] = driver;
     }
     if (mounted) setState(() {});
+    return null;
   }
 
   Future<void> _deleteDriver(String id) async {
@@ -82,6 +114,13 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
       await _db.collection('schedules').doc(s.id).delete();
     }
     await _db.collection('drivers').doc(id).delete();
+    // Hapus juga dokumen 'users' terkait (id sama dengan driver.id/uid).
+    // Catatan: akun Firebase Auth-nya sendiri tidak bisa dihapus dari sisi
+    // client tanpa Admin SDK/Cloud Function — idealnya dibuatkan Cloud
+    // Function terpisah agar akun Auth ikut terhapus.
+    try {
+      await _db.collection('users').doc(id).delete();
+    } catch (_) {}
     _drivers.removeWhere((d) => d.id == id);
     if (mounted) setState(() {});
   }
@@ -92,7 +131,8 @@ class _AdminKelolaTabState extends State<AdminKelolaTab> {
       barrierDismissible: true,
       builder: (_) => _DriverFormDialog(
         driver: driver,
-        onSave: (d, isNew) => _saveDriver(d, isNew: isNew),
+        onSave: (d, isNew, password) =>
+            _saveDriver(d, isNew: isNew, password: password),
       ),
     );
   }
@@ -632,7 +672,9 @@ class _EmptyState extends StatelessWidget {
 
 class _DriverFormDialog extends StatefulWidget {
   final Driver? driver;
-  final Future<void> Function(Driver driver, bool isNew) onSave;
+  // Mengembalikan pesan error (String) jika gagal, atau null jika sukses.
+  final Future<String?> Function(Driver driver, bool isNew, String? password)
+      onSave;
 
   const _DriverFormDialog({this.driver, required this.onSave});
 
@@ -645,9 +687,11 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _phoneCtrl;
+  late final TextEditingController _passwordCtrl;
 
   late String _selectedStatus;
   bool _isSaving = false;
+  bool _obscurePassword = true;
 
   bool get isEdit => widget.driver != null;
 
@@ -658,6 +702,7 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
     _nameCtrl = TextEditingController(text: d?.name ?? '');
     _emailCtrl = TextEditingController(text: d?.email ?? '');
     _phoneCtrl = TextEditingController(text: d?.phone ?? '');
+    _passwordCtrl = TextEditingController();
     _selectedStatus = d?.status ?? 'aktif';
   }
 
@@ -666,6 +711,7 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -681,8 +727,27 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
       status: _selectedStatus,
     );
 
-    await widget.onSave(driver, !isEdit);
-    if (mounted) Navigator.pop(context);
+    final errorMessage = await widget.onSave(
+      driver,
+      !isEdit,
+      isEdit ? null : _passwordCtrl.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (errorMessage != null) {
+      // Gagal (mis. email sudah terdaftar) → tampilkan pesan, dialog tetap terbuka
+      setState(() => _isSaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.red[600],
+        ),
+      );
+      return;
+    }
+
+    Navigator.pop(context);
   }
 
   @override
@@ -756,15 +821,88 @@ class _DriverFormDialogState extends State<_DriverFormDialog> {
                     ),
                     const SizedBox(height: 14),
 
-                    _label('EMAIL'),
+                    _label(isEdit ? 'EMAIL' : 'EMAIL *'),
                     const SizedBox(height: 8),
                     _textField(
                       ctrl: _emailCtrl,
                       hint: 'email@contoh.com',
                       icon: Icons.email_outlined,
                       keyboard: TextInputType.emailAddress,
+                      validator: isEdit
+                          ? null
+                          : (v) {
+                              if (v == null || v.trim().isEmpty) {
+                                return 'Email wajib diisi untuk login driver';
+                              }
+                              if (!v.contains('@')) {
+                                return 'Format email tidak valid';
+                              }
+                              return null;
+                            },
                     ),
                     const SizedBox(height: 14),
+
+                    if (!isEdit) ...[
+                      _label('PASSWORD LOGIN DRIVER *'),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _passwordCtrl,
+                        obscureText: _obscurePassword,
+                        decoration: InputDecoration(
+                          hintText: 'Minimal 6 karakter',
+                          prefixIcon: Icon(Icons.lock_outline,
+                              color: Colors.grey[400], size: 20),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                              color: Colors.grey[400],
+                              size: 20,
+                            ),
+                            onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey[300]!),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                BorderSide(color: Colors.indigo[500]!, width: 2),
+                          ),
+                          errorBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide:
+                                BorderSide(color: Colors.red[300]!, width: 1.5),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 14),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Password tidak boleh kosong';
+                          }
+                          if (v.trim().length < 6) {
+                            return 'Password minimal 6 karakter';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Password ini dipakai driver untuk login pertama kali. Sampaikan ke driver secara langsung.',
+                        style: TextStyle(fontSize: 10.5, color: Colors.grey[500]),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
 
                     _label('STATUS'),
                     const SizedBox(height: 8),

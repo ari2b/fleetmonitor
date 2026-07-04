@@ -6,6 +6,8 @@ class Schedule {
   String description;
   String driverId;
   String driverName;
+  String vehicleId;
+  String vehiclePlate;
   DateTime scheduleDate;
   String startTime;
   String endTime;
@@ -19,6 +21,8 @@ class Schedule {
     this.description = '',
     required this.driverId,
     this.driverName = '',
+    this.vehicleId = '',
+    this.vehiclePlate = '',
     required this.scheduleDate,
     this.startTime = '',
     this.endTime = '',
@@ -34,6 +38,8 @@ class Schedule {
       description: map['description'] ?? '',
       driverId: map['driverId'] ?? '',
       driverName: map['driverName'] ?? '',
+      vehicleId: map['vehicleId'] ?? '',
+      vehiclePlate: map['vehiclePlate'] ?? '',
       scheduleDate: map['scheduleDate'] != null
           ? (map['scheduleDate'] as Timestamp).toDate()
           : DateTime.now(),
@@ -53,6 +59,8 @@ class Schedule {
       'description': description,
       'driverId': driverId,
       'driverName': driverName,
+      'vehicleId': vehicleId,
+      'vehiclePlate': vehiclePlate,
       'scheduleDate': Timestamp.fromDate(scheduleDate),
       'startTime': startTime,
       'endTime': endTime,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../models/driver_model.dart';
 import '../../../models/schedule_model.dart';
+import '../../../models/vehicle_model.dart';
 
 // ─── Warna Status Jadwal ──────────────────────────────────────────────────────
 
@@ -549,6 +550,14 @@ class _ScheduleCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (schedule.vehiclePlate.isNotEmpty) ...[
+                  _InfoRow(
+                    icon: Icons.local_shipping_outlined,
+                    text: schedule.vehiclePlate,
+                    color: Colors.purple,
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 if (schedule.startTime.isNotEmpty ||
                     schedule.endTime.isNotEmpty)
                   _InfoRow(
@@ -659,6 +668,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
 
   late DateTime _selectedDate;
   late String _selectedStatus;
+  String? _selectedVehicleId;
+  String _selectedVehiclePlate = '';
   bool _isSaving = false;
 
   bool get isEdit => widget.schedule != null;
@@ -681,6 +692,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
     _endCtrl = TextEditingController(text: s?.endTime ?? '');
     _selectedDate = s?.scheduleDate ?? DateTime.now();
     _selectedStatus = s?.status ?? 'pending';
+    _selectedVehicleId = (s?.vehicleId.isNotEmpty ?? false) ? s!.vehicleId : null;
+    _selectedVehiclePlate = s?.vehiclePlate ?? '';
   }
 
   @override
@@ -737,6 +750,8 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
       description: _descCtrl.text.trim(),
       driverId: widget.driver.id,
       driverName: widget.driver.name,
+      vehicleId: _selectedVehicleId ?? '',
+      vehiclePlate: _selectedVehiclePlate,
       scheduleDate: _selectedDate,
       startTime: _startCtrl.text.trim(),
       endTime: _endCtrl.text.trim(),
@@ -875,6 +890,82 @@ class _ScheduleFormDialogState extends State<_ScheduleFormDialog> {
                           ],
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Armada — join ke koleksi vehicles
+                    _label('ARMADA'),
+                    const SizedBox(height: 8),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('vehicles')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: const Center(
+                              child: SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          );
+                        }
+
+                        final vehicles = snapshot.data!.docs
+                            .map((d) => Vehicle.fromMap(
+                                d.id, d.data() as Map<String, dynamic>))
+                            .toList();
+
+                        // Pastikan armada yang sudah tersimpan tetap muncul
+                        // walaupun statusnya sudah tidak "idle" lagi.
+                        final currentValue = vehicles.any(
+                                (v) => v.id == _selectedVehicleId)
+                            ? _selectedVehicleId
+                            : null;
+
+                        return DropdownButtonFormField<String>(
+                          value: currentValue,
+                          isExpanded: true,
+                          decoration: _inputDeco(
+                              'Pilih armada (opsional)',
+                              Icons.local_shipping_outlined),
+                          items: vehicles
+                              .map((v) => DropdownMenuItem(
+                                    value: v.id,
+                                    child: Text(
+                                      '${v.plateNumber} — ${v.vehicleType}${v.vehicleBrand.isNotEmpty ? ' ${v.vehicleBrand}' : ''}',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ))
+                              .toList(),
+                          onChanged: (value) {
+                            final picked = vehicles.firstWhere(
+                                (v) => v.id == value,
+                                orElse: () => Vehicle(
+                                    id: '',
+                                    driverName: '',
+                                    plateNumber: '',
+                                    lat: 0,
+                                    lng: 0));
+                            setState(() {
+                              _selectedVehicleId = value;
+                              _selectedVehiclePlate = picked.plateNumber;
+                            });
+                          },
+                          dropdownColor: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          icon: Icon(Icons.expand_more, color: Colors.grey[400]),
+                        );
+                      },
                     ),
                     const SizedBox(height: 14),
 
